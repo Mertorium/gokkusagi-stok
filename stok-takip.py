@@ -111,8 +111,16 @@ if menu == "Sepet & Satış":
 
   if st.session_state.sepet:
     st.subheader("Aktif Sepet")
-    df_sepet = pd.DataFrame(st.session_state.sepet)
-    st.table(df_sepet)
+    # Sepet tablosunu formatlı gösterim
+    sepet_gosterim = []
+    for item in st.session_state.sepet:
+      sepet_gosterim.append({
+          "Ürün": item["urun"],
+          "Adet": item["adet"],
+          "Birim Fiyat": f"{item['birim']:.2f} TL",
+          "Toplam Tutar": f"{item['tutar']:.2f} TL",
+      })
+    st.table(pd.DataFrame(sepet_gosterim))
 
     if st.button("🛒 Sepeti Satışa Dönüştür (Tamamla)"):
       if odeme_tipi == "Veresiye" and musteri == "GENEL MÜŞTERİ":
@@ -158,7 +166,19 @@ if menu == "Sepet & Satış":
 
   st.subheader("Son Satışlar")
   if veri["s"]:
-    st.table(pd.DataFrame(veri["s"])[::-1])
+    goruntulenecek_satislar = []
+    for s in reversed(veri["s"]):
+      goruntulenecek_satislar.append({
+          "Tarih": s.get("tarih", ""),
+          "Müşteri": s.get("musteri", ""),
+          "Ürün": s.get("urun", ""),
+          "Adet": s.get("adet", 0),
+          "Ciro": f"{s.get('ciro', 0):.2f} TL",
+          "Maliyet": f"{s.get('maliyet', 0):.2f} TL",
+          "Kâr": f"{s.get('kar', 0):.2f} TL",
+          "Ödeme Tipi": s.get("odeme_tipi", ""),
+      })
+    st.table(pd.DataFrame(goruntulenecek_satislar))
   else:
     st.info("Henüz satış kaydı yok.")
 
@@ -187,18 +207,22 @@ elif menu == "Veresiye Defteri":
     if kal > 0.01:
       veresiye_listesi.append({
           "Müşteri": m,
-          "Toplam Borç": b,
-          "Ödenen": odenenler.get(m, 0),
-          "Kalan Borç": kal,
+          "Toplam Borç": f"{b:.2f} TL",
+          "Ödenen": f"{odenenler.get(m, 0):.2f} TL",
+          "Kalan Borç": f"{kal:.2f} TL",
       })
 
   if veresiye_listesi:
-    df_v = pd.DataFrame(veresiye_listesi)
-    st.table(df_v)
+    st.table(pd.DataFrame(veresiye_listesi))
 
-    Secilen_m = st.selectbox(
-        "Tahsilat Alınacak Müşteri", [x["Müşteri"] for x in veresiye_listesi]
-    )
+    # Saf sayısal müşteri listesi tahsilat için
+    ham_veresiye = []
+    for m, b in borclar.items():
+      kal = b - odenenler.get(m, 0)
+      if kal > 0.01:
+        ham_veresiye.append(m)
+
+    Secilen_m = st.selectbox("Tahsilat Alınacak Müşteri", ham_veresiye)
     tahsilat_tutari = st.number_input("Tahsil Edilen Tutar (TL)", min_value=0.0)
     t_tipi = st.selectbox("Tahsilat Türü", ["Nakit", "Kredi Kartı"])
 
@@ -211,7 +235,7 @@ elif menu == "Veresiye Defteri":
             "tip": t_tipi,
         })
         veri_kaydet(veri)
-        st.success(f"{Secilen_m} hesabından {tahsilat_tutari} TL tahsil edildi.")
+        st.success(f"{Secilen_m} hesabından {tahsilat_tutari:.2f} TL tahsil edildi.")
         st.rerun()
   else:
     st.info("Kayıtlı veresiye borcu bulunan müşteri yok.")
@@ -363,8 +387,8 @@ elif menu == "Stok Listesi":
             "Ürün": k,
             "Adet": v["adet"],
             "Kritik Sınır": v["kritik"],
-            "Birim Maliyet": v["maliyet"],
-            "Toplam Değer": v["adet"] * v["maliyet"],
+            "Birim Maliyet": f"{v['maliyet']:.2f} TL",
+            "Toplam Değer": f"{v['adet'] * v['maliyet']:.2f} TL",
         }
         for k, v in veri["u"].items()
     ]
