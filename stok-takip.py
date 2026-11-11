@@ -60,7 +60,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "Raporlar",
 ])
 
-# 1. SEPET & SATIŞ YAP
+# 1. SEPET & SATIŞ YAP (FIFO: En eski stoktan düşer)
 with tab1:
   sol_kolon, sag_kolon = st.columns([1.1, 1.9], gap="medium")
 
@@ -86,11 +86,15 @@ with tab1:
           "Müşteri / Firma", sorted(list(set(musteri_listesi)))
       )
 
-      aktif_urunler = [
-          u
-          for u, b in veri["u"].items()
-          if isinstance(b, dict) and b.get("adet", 0) > 0
-      ]
+      # Toplam stoğu 0'dan büyük olan ürünler
+      aktif_urunler = []
+      for u_adi, alimlar in veri["u"].items():
+        toplam_adet = sum(
+            a.get("adet", 0) for a in alimlar if isinstance(a, dict)
+        )
+        if toplam_adet > 0:
+          aktif_urunler.append(u_adi)
+
       urun = st.selectbox(
           "Ürün Seçin",
           sorted(aktif_urunler) if aktif_urunler else ["Stokta ürün yok"],
@@ -100,11 +104,11 @@ with tab1:
       with col_a:
         adet = st.number_input("Adet", min_value=1, value=1, key="sepet_adet")
       with col_b:
-        varsayilan_fiyat = (
-            veri["u"].get(urun, {"maliyet": 0}).get("maliyet", 0) * 1.2
-            if urun in veri["u"]
-            else 0.0
-        )
+        # Seçilen ürünün en son alım maliyetine göre varsayılan fiyat önerisi
+        varsayilan_fiyat = 0.0
+        if urun in veri["u"] and veri["u"][urun]:
+          varsayilan_fiyat = veri["u"][urun][-1].get("maliyet", 0.0) * 1.2
+
         birim_fiyat = st.number_input(
             "Birim Fiyat (TL)",
             min_value=0.0,
@@ -149,31 +153,59 @@ with tab1:
         elif odeme_tipi == "Veresiye" and musteri == "GENEL MÜŞTERİ":
           st.error("Veresiye satışlar için Genel Müşteri seçilemez.")
         else:
+          # Stok kontrolü (FIFO toplamına göre)
           hata = False
           for item in st.session_state.sepet:
-            if veri["u"][item["urun"]]["adet"] < item["adet"]:
-              st.error(f"{item['urun']} için yeterli stok yok!")
+            u_adi = item["urun"]
+            istenen_adet = item["adet"]
+            toplam_stok = sum(
+                a.get("adet", 0) for a in veri["u"].get(u_adi, [])
+            )
+            if toplam_stok < istenen_adet:
+              st.error(
+                  f"'{u_adi}' için yeterli stok yok! (Mevcut Toplam:"
+                  f" {toplam_stok}, İstenen: {istenen_adet})"
+              )
               hata = True
               break
+
           if not hata:
             for item in st.session_state.sepet:
               u_adi = item["urun"]
-              u_adet = item["adet"]
+              kalan_satis_adeti = item["adet"]
               u_tutar = item["tutar"]
-              veri["u"][u_adi]["adet"] -= u_adet
-              mal = veri["u"][u_adi]["maliyet"] * u_adet
-              kar = u_tutar - mal
+
+              # FIFO Mantığı: En eski alımdan başlayarak düş
+              toplam_maliyet = 0.0
+              while kalan_satis_adeti > 0 and veri["u"][u_adi]:
+                en_eski_alim = veri["u"][u_adi][
+                    0
+                ]  # Listenin ilk elemanı en eski alımdır
+                if en_eski_alim["adet"] > kalan_satis_adeti:
+                  en_eski_alim["adet"] -= kalan_satis_adeti
+                  toplam_maliyet += kalan_satis_adeti * en_eski_alim["maliyet"]
+                  kalan_satis_adeti = 0
+                else:
+                  dusulen_adet = en_eski_alim["adet"]
+                  toplam_maliyet += dusulen_adet * en_eski_alim["maliyet"]
+                  kalan_satis_adeti -= dusulen_adet
+                  veri["u"][u_adi].pop(
+                      0
+                  )  # Bu alım tamamen bittiyse listeden kaldır
+
+              kar = u_tutar - toplam_maliyet
               veri["s"].append({
                   "no": len(veri["s"]) + 1,
                   "tarih": tarih,
                   "urun": u_adi,
-                  "adet": u_adet,
+                  "adet": item["adet"],
                   "tutar": u_tutar,
-                  "maliyet": mal,
+                  "maliyet": toplam_maliyet,
                   "kar": kar,
                   "odeme": odeme_tipi,
                   "musteri": musteri,
               })
+
             veri_kaydet(veri)
             st.session_state.sepet = []
             st.success("Satış başarıyla tamamlandı!")
@@ -221,7 +253,22 @@ with tab1:
       if st.button("Seçili Son Satışı İade Et / Sil"):
         if veri["s"]:
           silinen = veri["s"].pop()
-          veri["u"][silinen["urun"]]["adet"] += silinen["adet"]
+          # İade durumunda stoğa geri ekleme (en son alım partisinin üstüne eklenir)
+          u_adi = silinen["urun"]
+          iade_adet = silinen["adet"]
+          if u_adi not in veri["u"]:
+            veri["u"][u_adi] = []
+          if veri["u"][u_adi]:
+            veri["u"][u_adi][-1]["adet"] += iade_adet
+          else:
+            veri["u"][u_adi].append({
+                "tarih": silinen["tarih"],
+                "adet": iade_adet,
+                "maliyet": silinen["maliyet"] / iade_adet
+                if iade_adet > 0
+                else 0,
+                "kritik": 5,
+            })
           veri_kaydet(veri)
           st.success("Satış iptal edildi ve stok iade alındı.")
           st.rerun()
@@ -275,95 +322,137 @@ with tab4:
   toplam_satis = sum(s.get("tutar", 0) for s in veri["s"])
   st.metric("Toplam Satış / Ciro", f"{toplam_satis:.2f} TL")
 
-# 5. STOK LİSTESİ (YENİ: Ürün Ekleme, Düzenleme ve Silme Özelliği Eklendi)
+# 5. STOK LİSTESİ (Her alım ayrı satır olarak eklenir, yeni alım üstte görünür)
 with tab5:
-  st.header("📦 Ürün ve Stok Yönetimi")
+  st.header("📦 Ürün ve Stok Yönetimi (Parti Bazlı Alım)")
 
-  st.subheader("➕ Yeni Ürün Ekle")
+  st.subheader("➕ Yeni Alım / Stok Ekle")
   with st.form("stok_ekle_form"):
     u_ad = st.text_input("Ürün Adı").strip().upper()
-    col_s1, col_s2 = st.columns(2)
+    col_s1, col_s2, col_s3 = st.columns(3)
     with col_s1:
-      u_adet = st.number_input("Adet", min_value=1, value=10)
+      alim_tarih = st.text_input(
+          "Alım Tarihi",
+          value=datetime.now().strftime("%d.%m.%Y"),
+          key="alim_tarih",
+      )
     with col_s2:
-      u_kritik = st.number_input("Kritik Stok Eşiği", min_value=0, value=5)
-    u_mal = st.number_input("Birim Maliyet (TL)", min_value=0.0)
+      u_adet = st.number_input("Adet", min_value=1, value=10, key="ekle_adet")
+    with col_s3:
+      u_kritik = st.number_input(
+          "Kritik Eşik", min_value=0, value=5, key="ekle_kritik"
+      )
+    u_mal = st.number_input(
+        "Birim Maliyet (TL)", min_value=0.0, key="ekle_mal"
+    )
 
-    if st.form_submit_button("Ürünü Kaydet"):
+    if st.form_submit_button("Stok Girişini Kaydet"):
       if u_ad:
-        veri["u"][u_ad] = {
+        if u_ad not in veri["u"]:
+          veri["u"][u_ad] = []
+
+        # Yeni alımı listenin SONUNA ekliyoruz ki ters çevirdiğimizde EN YENİ ÜSTTE görinsün
+        veri["u"][u_ad].append({
+            "tarih": alim_tarih,
             "adet": u_adet,
             "maliyet": u_mal,
             "kritik": u_kritik,
-        }
+        })
         veri_kaydet(veri)
-        st.success(f"{u_ad} başarıyla kaydedildi.")
+        st.success(f"'{u_ad}' için yeni stok partisi eklendi.")
         st.rerun()
 
   st.divider()
-  st.subheader("✏️ Stok Düzenle / Sil")
+  st.subheader("📋 Mevcut Stok Listesi (En Yeni Alım Üstte)")
   if veri["u"]:
-    secilen_stok = st.selectbox(
-        "Düzenlenecek veya Silinecek Ürünü Seçin", sorted(list(veri["u"].keys()))
-    )
-    mevcut_bilgi = veri["u"][secilen_stok]
+    stok_listesi_tablo = []
+    for u_adi, alimlar in veri["u"].items():
+      # alimlar listesini ters çeviriyoruz (en yeni alım en üstte görünsün)
+      for idx, alim in enumerate(reversed(alimlar)):
+        if alim.get("adet", 0) > 0:
+          stok_listesi_tablo.append({
+              "Ürün Adı": u_adi,
+              "Alım Tarihi": alim.get("tarih", "-"),
+              "Adet": alim.get("adet", 0),
+              "Kritik Eşik": alim.get("kritik", 5),
+              "Birim Maliyet": f"{alim.get('maliyet', 0):.2f} TL",
+              "Orijinal_Index": len(alimlar)
+              - 1
+              - idx,  # Düzenleme/silme için
+          })
 
-    with st.form("stok_duzenle_form"):
-      d_adet = st.number_input(
-          "Güncel Adet",
-          min_value=0,
-          value=int(mevcut_bilgi.get("adet", 0)),
-      )
-      d_kritik = st.number_input(
-          "Güncel Kritik Eşik",
-          min_value=0,
-          value=int(mevcut_bilgi.get("kritik", 5)),
-      )
-      d_mal = st.number_input(
-          "Güncel Birim Maliyet (TL)",
-          min_value=0.0,
-          value=float(mevcut_bilgi.get("maliyet", 0.0)),
-      )
+    if stok_listesi_tablo:
+      df_stok = pd.DataFrame(stok_listesi_tablo)
+      st.table(df_stok.drop(columns=["Orijinal_Index"]))
 
-      col_d1, col_d2 = st.columns(2)
-      with col_d1:
-        guncelle_basildi = st.form_submit_button(
-            "💾 Değişiklikleri Kaydet", type="primary"
-        )
-      with col_d2:
-        sil_basildi = st.form_submit_button(
-            "🗑️ Bu Ürünü Stoktan Sil", type="secondary"
-        )
+      st.divider()
+      st.subheader("✏️ Belirli Bir Stok Partisini Düzenle veya Sil")
+      secenekler = [
+          f"{row['Ürün Adı']} - Tarih: {row['Alım Tarihi']} - Adet: {row['Adet']} (Index: {row['Orijinal_Index']})"
+          for row in stok_listesi_tablo
+      ]
+      secilen_parti = st.selectbox("Düzenlenecek / Silinecek Stok Partisi", secenekler)
 
-      if guncelle_basildi:
-        veri["u"][secilen_stok] = {
-            "adet": d_adet,
-            "maliyet": d_mal,
-            "kritik": d_kritik,
-        }
-        veri_kaydet(veri)
-        st.success(f"{secilen_stok} güncellendi.")
-        st.rerun()
+      if secilen_parti:
+        # Seçilen partinin ürün adını ve orijinal indexini bulma
+        parcalar = secilen_parti.split(" (Index: ")
+        u_adi = parcalar[0].split(" - Tarih: ")[0]
+        orijinal_idx = int(parcalar[1].replace(")", ""))
 
-      if sil_basildi:
-        del veri["u"][secilen_stok]
-        veri_kaydet(veri)
-        st.success(f"{secilen_stok} stoktan tamamen silindi.")
-        st.rerun()
+        if u_adi in veri["u"] and len(veri["u"][u_adi]) > orijinal_idx:
+          parti_bilgi = veri["u"][u_adi][orijinal_idx]
 
-  st.divider()
-  st.subheader("📋 Mevcut Stok Listesi")
-  if veri["u"]:
-    stok_list = [
-        {
-            "Ürün": k,
-            "Adet": v["adet"],
-            "Kritik Eşik": v.get("kritik", 5),
-            "Birim Maliyet": f"{v.get('maliyet',0):.2f} TL",
-        }
-        for k, v in veri["u"].items()
-    ]
-    st.table(pd.DataFrame(stok_list))
+          with st.form("parti_duzenle_form"):
+            d_tarih = st.text_input(
+                "Parti Tarihi",
+                value=parti_bilgi.get(
+                    "tarih", datetime.now().strftime("%d.%m.%Y")
+                ),
+            )
+            d_adet = st.number_input(
+                "Adet", min_value=0, value=int(parti_bilgi.get("adet", 0))
+            )
+            d_kritik = st.number_input(
+                "Kritik Eşik",
+                min_value=0,
+                value=int(parti_bilgi.get("kritik", 5)),
+            )
+            d_mal = st.number_input(
+                "Birim Maliyet (TL)",
+                min_value=0.0,
+                value=float(parti_bilgi.get("maliyet", 0.0)),
+            )
+
+            col_p1, col_p2 = st.columns(2)
+            with col_p1:
+              guncelle_tik = st.form_submit_button(
+                  "💾 Partiyi Güncelle", type="primary"
+              )
+            with col_p2:
+              sil_tik = st.form_submit_button(
+                  "🗑️ Bu Partiyi Sil", type="secondary"
+              )
+
+            if guncelle_tik:
+              veri["u"][u_adi][orijinal_idx] = {
+                  "tarih": d_tarih,
+                  "adet": d_adet,
+                  "maliyet": d_mal,
+                  "kritik": d_kritik,
+              }
+              veri_kaydet(veri)
+              st.success("Stok partisi güncellendi.")
+              st.rerun()
+
+            if sil_tik:
+              veri["u"][u_adi].pop(orijinal_idx)
+              if not veri["u"][u_adi]:
+                del veri["u"][u_adi]
+              veri_kaydet(veri)
+              st.success("Stok partisi silindi.")
+              st.rerun()
+    else:
+      st.info("Aktif stok bulunmuyor.")
   else:
     st.info("Kayıtlı ürün bulunmuyor.")
 
@@ -371,11 +460,13 @@ with tab5:
 with tab6:
   st.header("⚠️ Kritik Stok Seviyeleri")
   kritik_liste = []
-  for k, v in veri["u"].items():
-    esik = v.get("kritik", 5)
-    if v["adet"] <= esik:
+  for k, alimlar in veri["u"].items():
+    toplam_adet = sum(a.get("adet", 0) for a in alimlar)
+    # Ürünün herhangi bir partisindeki kritik eşik baz alınır
+    esik = alimlar[-1].get("kritik", 5) if alimlar else 5
+    if toplam_adet <= esik:
       kritik_liste.append(
-          {"Ürün": k, "Mevcut Adet": v["adet"], "Kritik Eşik": esik}
+          {"Ürün": k, "Toplam Mevcut Adet": toplam_adet, "Kritik Eşik": esik}
       )
 
   if kritik_liste:
