@@ -50,17 +50,18 @@ st.markdown(
 st.divider()
 
 # Yatay Sekmeler (st.tabs)
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "Sepet & Satış Yap",
     "Veresiye",
     "Cari",
     "Kasa",
+    "Giderler",
     "Stok Listesi",
     "Kritik Stok",
     "Raporlar",
 ])
 
-# 1. SEPET & SATIŞ YAP (FIFO: En eski stoktan düşer)
+# 1. SEPET & SATIŞ YAP
 with tab1:
   sol_kolon, sag_kolon = st.columns([1.1, 1.9], gap="medium")
 
@@ -86,7 +87,6 @@ with tab1:
           "Müşteri / Firma", sorted(list(set(musteri_listesi)))
       )
 
-      # Toplam stoğu 0'dan büyük olan ürünler
       aktif_urunler = []
       for u_adi, alimlar in veri["u"].items():
         toplam_adet = sum(
@@ -104,7 +104,6 @@ with tab1:
       with col_a:
         adet = st.number_input("Adet", min_value=1, value=1, key="sepet_adet")
       with col_b:
-        # Seçilen ürünün en son alım maliyetine göre varsayılan fiyat önerisi
         varsayilan_fiyat = 0.0
         if urun in veri["u"] and veri["u"][urun]:
           varsayilan_fiyat = veri["u"][urun][-1].get("maliyet", 0.0) * 1.2
@@ -153,7 +152,6 @@ with tab1:
         elif odeme_tipi == "Veresiye" and musteri == "GENEL MÜŞTERİ":
           st.error("Veresiye satışlar için Genel Müşteri seçilemez.")
         else:
-          # Stok kontrolü (FIFO toplamına göre)
           hata = False
           for item in st.session_state.sepet:
             u_adi = item["urun"]
@@ -162,10 +160,7 @@ with tab1:
                 a.get("adet", 0) for a in veri["u"].get(u_adi, [])
             )
             if toplam_stok < istenen_adet:
-              st.error(
-                  f"'{u_adi}' için yeterli stok yok! (Mevcut Toplam:"
-                  f" {toplam_stok}, İstenen: {istenen_adet})"
-              )
+              st.error(f"'{u_adi}' için yeterli stok yok!")
               hata = True
               break
 
@@ -175,12 +170,9 @@ with tab1:
               kalan_satis_adeti = item["adet"]
               u_tutar = item["tutar"]
 
-              # FIFO Mantığı: En eski alımdan başlayarak düş
               toplam_maliyet = 0.0
               while kalan_satis_adeti > 0 and veri["u"][u_adi]:
-                en_eski_alim = veri["u"][u_adi][
-                    0
-                ]  # Listenin ilk elemanı en eski alımdır
+                en_eski_alim = veri["u"][u_adi][0]
                 if en_eski_alim["adet"] > kalan_satis_adeti:
                   en_eski_alim["adet"] -= kalan_satis_adeti
                   toplam_maliyet += kalan_satis_adeti * en_eski_alim["maliyet"]
@@ -189,9 +181,7 @@ with tab1:
                   dusulen_adet = en_eski_alim["adet"]
                   toplam_maliyet += dusulen_adet * en_eski_alim["maliyet"]
                   kalan_satis_adeti -= dusulen_adet
-                  veri["u"][u_adi].pop(
-                      0
-                  )  # Bu alım tamamen bittiyse listeden kaldır
+                  veri["u"][u_adi].pop(0)
 
               kar = u_tutar - toplam_maliyet
               veri["s"].append({
@@ -233,9 +223,124 @@ with tab1:
     else:
       st.info("Aktif sepet boş.")
 
+  # SAĞ KOLON: Satış Yönetimi, Seçmeli İptal, Onaylı İade
   with sag_kolon:
-    st.markdown("#### 📋 Son Satış İşlemleri")
+    st.markdown("#### 📋 Satış Yönetimi ve İptal / İade")
     if veri["s"]:
+      satis_secenekleri = [
+          f"No: {s.get('no')} | Tarih: {s.get('tarih')} | Müşteri: {s.get('musteri')} | Ürün: {s.get('urun')} ({s.get('adet')} Adet) - {s.get('tutar'):.2f} TL"
+          for s in veri["s"]
+      ]
+      secilen_satis_str = st.selectbox(
+          "İşlem Yapılacak Satışı Seçin",
+          satis_secenekleri[::-1],
+          key="secilen_satis_yonetim",
+      )
+
+      if secilen_satis_str:
+        satis_no_str = secilen_satis_str.split(" | ")[0].replace("No: ", "")
+        satis_idx = None
+        target_satis = None
+        for idx, s in enumerate(veri["s"]):
+          if str(s.get("no")) == satis_no_str:
+            satis_idx = idx
+            target_satis = s
+            break
+
+        if target_satis:
+          st.info(
+              f"Seçilen Satış -> Ürün: {target_satis.get('urun')} | Adet:"
+              f" {target_satis.get('adet')} | Tutar:"
+              f" {target_satis.get('tutar'):.2f} TL"
+          )
+
+          onay_kutu = st.checkbox(
+              "⚠️ Bu işlem için onay veriyorum", key=f"onay_{satis_no_str}"
+          )
+
+          col_islem1, col_islem2 = st.columns(2)
+          with col_islem1:
+            if st.button("🗑️ Seçilen Satışı Tamamen İptal Et"):
+              if not onay_kutu:
+                st.error("Lütfen önce onay kutusunu işaretleyin!")
+              else:
+                u_adi = target_satis.get("urun")
+                iade_adet = target_satis.get("adet")
+                if u_adi not in veri["u"]:
+                  veri["u"][u_adi] = []
+                if veri["u"][u_adi]:
+                  veri["u"][u_adi][-1]["adet"] += iade_adet
+                else:
+                  veri["u"][u_adi].append({
+                      "tarih": target_satis.get("tarih"),
+                      "adet": iade_adet,
+                      "maliyet": target_satis.get("maliyet") / iade_adet
+                      if iade_adet > 0
+                      else 0,
+                      "kritik": 5,
+                  })
+
+                veri["s"].pop(satis_idx)
+                veri_kaydet(veri)
+                st.success(
+                    "Satış iptal edildi ve ürünler stoğa iade edildi."
+                )
+                st.rerun()
+
+          with col_islem2:
+            iade_parca_adet = st.number_input(
+                "İade Adedi",
+                min_value=1,
+                max_value=int(target_satis.get("adet", 1)),
+                value=1,
+                key=f"iade_adet_{satis_no_str}",
+            )
+            if st.button("🔄 Kısmi İade Al"):
+              if not onay_kutu:
+                st.error("Lütfen önce onay kutusunu işaretleyin!")
+              else:
+                orijinal_adet = target_satis.get("adet")
+                if iade_parca_adet >= orijinal_adet:
+                  st.error(
+                      "Tam adetten fazla veya eşit iade için tamamen iptal"
+                      " butonunu kullanın."
+                  )
+                else:
+                  birim_fiyat_orijinal = (
+                      target_satis.get("tutar") / orijinal_adet
+                  )
+                  birim_maliyet_orijinal = (
+                      target_satis.get("maliyet") / orijinal_adet
+                  )
+
+                  iade_tutar = iade_parca_adet * birim_fiyat_orijinal
+                  iade_maliyet = iade_parca_adet * birim_maliyet_orijinal
+                  iade_kar = iade_tutar - iade_maliyet
+
+                  target_satis["adet"] -= iade_parca_adet
+                  target_satis["tutar"] -= iade_tutar
+                  target_satis["maliyet"] -= iade_maliyet
+                  target_satis["kar"] -= iade_kar
+
+                  u_adi = target_satis.get("urun")
+                  if u_adi not in veri["u"]:
+                    veri["u"][u_adi] = []
+                  if veri["u"][u_adi]:
+                    veri["u"][u_adi][-1]["adet"] += iade_parca_adet
+                  else:
+                    veri["u"][u_adi].append({
+                        "tarih": target_satis.get("tarih"),
+                        "adet": iade_parca_adet,
+                        "maliyet": birim_maliyet_orijinal,
+                        "kritik": 5,
+                    })
+
+                  veri_kaydet(veri)
+                  st.success(f"{iade_parca_adet} adet ürün iade alındı.")
+                  st.rerun()
+
+      st.divider()
+      st.markdown("#### 📜 Tüm Satış Geçmişi")
       satis_listesi = []
       for s in reversed(veri["s"]):
         satis_listesi.append({
@@ -249,29 +354,6 @@ with tab1:
             "Müşteri": s.get("musteri", ""),
         })
       st.table(pd.DataFrame(satis_listesi))
-
-      if st.button("Seçili Son Satışı İade Et / Sil"):
-        if veri["s"]:
-          silinen = veri["s"].pop()
-          # İade durumunda stoğa geri ekleme (en son alım partisinin üstüne eklenir)
-          u_adi = silinen["urun"]
-          iade_adet = silinen["adet"]
-          if u_adi not in veri["u"]:
-            veri["u"][u_adi] = []
-          if veri["u"][u_adi]:
-            veri["u"][u_adi][-1]["adet"] += iade_adet
-          else:
-            veri["u"][u_adi].append({
-                "tarih": silinen["tarih"],
-                "adet": iade_adet,
-                "maliyet": silinen["maliyet"] / iade_adet
-                if iade_adet > 0
-                else 0,
-                "kritik": 5,
-            })
-          veri_kaydet(veri)
-          st.success("Satış iptal edildi ve stok iade alındı.")
-          st.rerun()
     else:
       st.info("Henüz satış kaydı bulunmuyor.")
 
@@ -318,12 +400,65 @@ with tab3:
 
 # 4. KASA
 with tab4:
-  st.header("💰 Kasa Özeti ve Gider Yönetimi")
+  st.header("💰 Kasa Özeti")
   toplam_satis = sum(s.get("tutar", 0) for s in veri["s"])
+  toplam_gider = sum(g.get("tutar", 0) for g in veri["g"])
   st.metric("Toplam Satış / Ciro", f"{toplam_satis:.2f} TL")
+  st.metric("Toplam Giderler", f"{toplam_gider:.2f} TL")
 
-# 5. STOK LİSTESİ (Her alım ayrı satır olarak eklenir, yeni alım üstte görünür)
+# 5. GİDERLER (YENİ SEKME)
 with tab5:
+  st.header("💸 Gider Yönetimi (Maaş, Muhasebe vb.)")
+  with st.form("gider_ekle_form"):
+    g_tarih = st.text_input(
+        "Gider Tarihi",
+        value=datetime.now().strftime("%d.%m.%Y"),
+        key="gider_tarih",
+    )
+    g_aciklama = st.text_input(
+        "Gider Açıklaması / Türü",
+        placeholder="Örn: İşçi Maaşı, Muhasebe Ücreti, Elektrik Faturası",
+    )
+    g_tutar = st.number_input(
+        "Gider Tutarı (TL)", min_value=0.0, value=0.0, key="gider_tutar"
+    )
+
+    if st.form_submit_button("Gideri Kaydet"):
+      if g_aciklama.strip() and g_tutar > 0:
+        veri["g"].append({
+            "tarih": g_tarih,
+            "aciklama": g_aciklama.strip(),
+            "tutar": g_tutar,
+        })
+        veri_kaydet(veri)
+        st.success(f"'{g_aciklama.strip()}' gideri başarıyla kaydedildi.")
+        st.rerun()
+      else:
+        st.error("Lütfen geçerli bir açıklama ve 0'dan büyük tutar girin.")
+
+  st.divider()
+  st.subheader("📋 Kayıtlı Giderler Listesi")
+  if veri["g"]:
+    gider_tablo = []
+    for idx, g in enumerate(reversed(veri["g"])):
+      gider_tablo.append({
+          "No": len(veri["g"]) - idx,
+          "Tarih": g.get("tarih"),
+          "Açıklama": g.get("aciklama"),
+          "Tutar": f"{g.get('tutar'):.2f} TL",
+      })
+    st.table(pd.DataFrame(gider_tablo))
+
+    if st.button("Seçili Son Gideri Sil"):
+      veri["g"].pop()
+      veri_kaydet(veri)
+      st.success("Son gider kaydı silindi.")
+      st.rerun()
+  else:
+    st.info("Kayıtlı gider bulunmuyor.")
+
+# 6. STOK LİSTESİ
+with tab6:
   st.header("📦 Ürün ve Stok Yönetimi (Parti Bazlı Alım)")
 
   st.subheader("➕ Yeni Alım / Stok Ekle")
@@ -350,8 +485,6 @@ with tab5:
       if u_ad:
         if u_ad not in veri["u"]:
           veri["u"][u_ad] = []
-
-        # Yeni alımı listenin SONUNA ekliyoruz ki ters çevirdiğimizde EN YENİ ÜSTTE görinsün
         veri["u"][u_ad].append({
             "tarih": alim_tarih,
             "adet": u_adet,
@@ -367,7 +500,6 @@ with tab5:
   if veri["u"]:
     stok_listesi_tablo = []
     for u_adi, alimlar in veri["u"].items():
-      # alimlar listesini ters çeviriyoruz (en yeni alım en üstte görünsün)
       for idx, alim in enumerate(reversed(alimlar)):
         if alim.get("adet", 0) > 0:
           stok_listesi_tablo.append({
@@ -376,9 +508,7 @@ with tab5:
               "Adet": alim.get("adet", 0),
               "Kritik Eşik": alim.get("kritik", 5),
               "Birim Maliyet": f"{alim.get('maliyet', 0):.2f} TL",
-              "Orijinal_Index": len(alimlar)
-              - 1
-              - idx,  # Düzenleme/silme için
+              "Orijinal_Index": len(alimlar) - 1 - idx,
           })
 
     if stok_listesi_tablo:
@@ -394,7 +524,6 @@ with tab5:
       secilen_parti = st.selectbox("Düzenlenecek / Silinecek Stok Partisi", secenekler)
 
       if secilen_parti:
-        # Seçilen partinin ürün adını ve orijinal indexini bulma
         parcalar = secilen_parti.split(" (Index: ")
         u_adi = parcalar[0].split(" - Tarih: ")[0]
         orijinal_idx = int(parcalar[1].replace(")", ""))
@@ -456,13 +585,12 @@ with tab5:
   else:
     st.info("Kayıtlı ürün bulunmuyor.")
 
-# 6. KRİTİK STOK
-with tab6:
+# 7. KRİTİK STOK
+with tab7:
   st.header("⚠️ Kritik Stok Seviyeleri")
   kritik_liste = []
   for k, alimlar in veri["u"].items():
     toplam_adet = sum(a.get("adet", 0) for a in alimlar)
-    # Ürünün herhangi bir partisindeki kritik eşik baz alınır
     esik = alimlar[-1].get("kritik", 5) if alimlar else 5
     if toplam_adet <= esik:
       kritik_liste.append(
@@ -474,10 +602,56 @@ with tab6:
   else:
     st.success("Kritik seviyede ürün bulunmuyor.")
 
-# 7. RAPORLAR
-with tab7:
-  st.header("📊 Finansal Raporlar")
-  toplam_ciro = sum(s.get("tutar", 0) for s in veri["s"])
-  toplam_kar = sum(s.get("kar", 0) for s in veri["s"])
-  st.metric("Toplam Ciro", f"{toplam_ciro:.2f} TL")
-  st.metric("Toplam Kâr", f"{toplam_kar:.2f} TL")
+# 8. RAPORLAR (YENİ: Tarih seçimi, veresiye dahil/hariç ciro ve kâr)
+with tab8:
+  st.header("📊 Detaylı Finansal Raporlar")
+  rapor_tarihi = st.date_input(
+      "Rapor Tarihi Seçin", value=datetime.today(), key="rapor_tarih_secim"
+  )
+  secilen_tarih_str = rapor_tarihi.strftime("%d.%m.%Y")
+
+  st.subheader(f"📅 {secilen_tarih_str} Tarihli Rapor Özeti")
+
+  gunluk_satislar = [
+      s for s in veri["s"] if s.get("tarih") == secilen_tarih_str
+  ]
+  gunluk_giderler = [
+      g for g in veri["g"] if g.get("tarih") == secilen_tarih_str
+  ]
+
+  # Ciro Hesapları
+  ciro_veresiye_dahil = sum(s.get("tutar", 0) for s in gunluk_satislar)
+  ciro_veresiye_haric = sum(
+      s.get("tutar", 0) for s in gunluk_satislar if s.get("odeme") != "Veresiye"
+  )
+
+  # Kâr Hesapları
+  kar_veresiye_dahil = sum(s.get("kar", 0) for s in gunluk_satislar)
+  kar_veresiye_haric = sum(
+      s.get("kar", 0) for s in gunluk_satislar if s.get("odeme") != "Veresiye"
+  )
+
+  toplam_gider = sum(g.get("tutar", 0) for g in gunluk_giderler)
+
+  c1, c2 = st.columns(2)
+  with c1:
+    st.metric("Günlük Ciro (Veresiye Dahil)", f"{ciro_veresiye_dahil:.2f} TL")
+    st.metric("Günlük Ciro (Veresiye Hariç)", f"{ciro_veresiye_haric:.2f} TL")
+  with c2:
+    st.metric("Günlük Kâr (Veresiye Dahil)", f"{kar_veresiye_dahil:.2f} TL")
+    st.metric("Günlük Kâr (Veresiye Hariç)", f"{kar_veresiye_haric:.2f} TL")
+
+  st.metric("Günlük Toplam Giderler", f"{toplam_gider:.2f} TL")
+
+  st.divider()
+  st.subheader("📋 Seçilen Güne Ait Satışlar")
+  if gunluk_satislar:
+    st.table(pd.DataFrame(gunluk_satislar))
+  else:
+    st.info("Bu tarihte satış kaydı bulunmuyor.")
+
+  st.subheader("📋 Seçilen Güne Ait Giderler")
+  if gunluk_giderler:
+    st.table(pd.DataFrame(gunluk_giderler))
+  else:
+    st.info("Bu tarihte gider kaydı bulunmuyor.")
