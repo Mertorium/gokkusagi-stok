@@ -282,4 +282,132 @@ elif menu == "Kasa & Giderler":
   ) + sum(
       t.get("tutar", 0)
       for t in veri["t"]
-      if isinstance(t,
+      if isinstance(t, dict) and t.get("tip") == "Nakit"
+  )
+  nakit_gider = sum(
+      g.get("tutar", 0)
+      for g in veri["g"]
+      if isinstance(g, dict) and g.get("tip") == "Nakit"
+  )
+  net_nakit = nakit_giris - nakit_gider
+
+  kart_giris = sum(
+      s.get("ciro", 0)
+      for s in veri["s"]
+      if isinstance(s, dict) and s.get("odeme_tipi") == "Kredi Kartı"
+  ) + sum(
+      t.get("tutar", 0)
+      for t in veri["t"]
+      if isinstance(t, dict) and t.get("tip") == "Kredi Kartı"
+  )
+  kart_gider = sum(
+      g.get("tutar", 0)
+      for g in veri["g"]
+      if isinstance(g, dict) and g.get("tip") == "Kredi Kartı"
+  )
+  net_kart = kart_giris - kart_gider
+
+  st.metric(
+      "Net Kasa Toplamı",
+      f"{net_nakit + net_kart:.2f} TL",
+      f"Nakit: {net_nakit:.2f} TL | Kart: {net_kart:.2f} TL",
+  )
+
+  st.subheader("💸 Gider Ekle (Maaş, Muhasebe vb.)")
+  g_tur = st.selectbox(
+      "Gider Türü",
+      [
+          "Muhasebe Ücreti",
+          "Çalışan Maaşı",
+          "Kira",
+          "Elektrik / Su",
+          "Dükkan Masrafı",
+          "Diğer",
+      ],
+  )
+  g_tutar = st.number_input("Gider Tutarı (TL)", min_value=0.0)
+  g_tip = st.selectbox("Ödeme Kaynağı", ["Nakit", "Kredi Kartı"])
+  g_detay = st.text_input("Açıklama / Detay")
+
+  if st.button("Gideri Kaydet ve Kasadan Düş"):
+    if g_tutar > 0:
+      veri["g"].append({
+          "tarih": datetime.now().strftime("%d.%m.%Y"),
+          "tur": g_tur,
+          "tutar": g_tutar,
+          "tip": g_tip,
+          "detay": f"{g_tur}" + (f" - {g_detay}" if g_detay else ""),
+      })
+      veri_kaydet(veri)
+      st.success("Gider kasadan düşüldü.")
+      st.rerun()
+
+# 5. STOK LİSTESİ
+elif menu == "Stok Listesi":
+  st.header("📦 Ürün ve Stok Yönetimi")
+
+  with st.form("urun_ekle"):
+    st.subheader("Yeni Ürün Ekle / Stok Girişi")
+    u_ad = st.text_input("Ürün Adı").strip().upper()
+    u_adet = st.number_input("Eklenecek Adet", min_value=0, value=10)
+    u_maliyet = st.number_input(
+        "Birim Maliyet / Alış Fiyatı (TL)", min_value=0.0
+    )
+    u_kritik = st.number_input("Kritik Stok Sınırı", min_value=1, value=5)
+    kasadan_dus = st.checkbox("Ücretini Nakit Kasadan Düş")
+
+    if st.form_submit_button("Ürünü Kaydet"):
+      if u_ad:
+        mevcut = veri["u"].get(
+            u_ad, {"adet": 0, "maliyet": 0, "kritik": 5}
+        )
+        mevcut["adet"] += u_adet
+        mevcut["maliyet"] = u_maliyet
+        mevcut["kritik"] = u_kritik
+        veri["u"][u_ad] = mevcut
+
+        if kasadan_dus and (u_adet * u_maliyet) > 0:
+          veri["g"].append({
+              "tarih": datetime.now().strftime("%d.%m.%Y"),
+              "tur": "Ürün Alım Gideri",
+              "tutar": u_adet * u_maliyet,
+              "tip": "Nakit",
+              "detay": f"{u_ad} ({u_adet} adet alım)",
+          })
+        veri_kaydet(veri)
+        st.success(f"{u_ad} başarıyla kaydedildi!")
+        st.rerun()
+
+  st.subheader("Mevcut Stoklar")
+  if veri["u"]:
+    stok_data = [
+        {
+            "Ürün": k,
+            "Adet": v["adet"],
+            "Kritik Sınır": v["kritik"],
+            "Birim Maliyet": f"{v['maliyet']:.2f} TL",
+            "Toplam Değer": f"{v['adet'] * v['maliyet']:.2f} TL",
+        }
+        for k, v in veri["u"].items()
+    ]
+    st.table(pd.DataFrame(stok_data))
+  else:
+    st.info("Henüz kayıtlı ürün yok.")
+
+# 6. RAPORLAR
+elif menu == "Raporlar":
+  st.header("📊 Finansal Raporlar")
+  toplam_ciro = sum(
+      s.get("ciro", 0) for s in veri["s"] if isinstance(s, dict)
+  )
+  toplam_kar = sum(s.get("kar", 0) for s in veri["s"] if isinstance(s, dict))
+  toplam_gider = sum(
+      g.get("tutar", 0) for g in veri["g"] if isinstance(g, dict)
+  )
+
+  st.metric("Toplam Ciro", f"{toplam_ciro:.2f} TL")
+  st.metric("Toplam Brüt Kâr", f"{toplam_kar:.2f} TL")
+  st.metric("Toplam Giderler", f"{toplam_gider:.2f} TL")
+  st.metric(
+      "Net Kazanç (Kâr - Gider)", f"{toplam_kar - toplam_gider:.2f} TL"
+  )
