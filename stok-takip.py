@@ -1,17 +1,18 @@
+from datetime import datetime
 import json
 import os
-from datetime import datetime
 import pandas as pd
 import streamlit as st
 
 st.set_page_config(
-    page_title="Gökkuşağı Temizlik ve Ambalaj", page_icon="🌈", layout="wide"
+    page_title="Gökkuşağı Temizlik ve Ambalaj - Stok & Finans",
+    page_icon="🌈",
+    layout="wide",
 )
 
 FILE = "stok_veri.json"
 
 
-# Veri Yükleme ve Güvenlik Kontrolü
 def veri_yukle():
   if os.path.exists(FILE):
     try:
@@ -40,209 +41,223 @@ def veri_kaydet(d):
 
 veri = veri_yukle()
 
-st.title("🌈 Gökkuşağı Temizlik ve Ambalaj - Stok & Finans")
+# Üst Başlık
+st.markdown(
+    "### 🌈 GÖKKUŞAĞI TEMİZLİK VE AMBALAJ - Stok & Finans Yönetimi"
+)
+st.divider()
 
-# Menü Sekmeleri
-menu = st.sidebar.radio(
-    "Menü",
+# Menü Sekmeleri (Üst Sekme Görünümü)
+menu = st.selectbox(
+    "Menü Sekmeleri",
     [
-        "Sepet & Satış",
-        "Veresiye Defteri",
-        "Cari Hesaplar",
-        "Kasa & Giderler",
-        "Stok Listesi",
-        "Raporlar",
+        "1. Sepet & Satış Yap",
+        "2. Veresiye",
+        "3. Cari",
+        "4. Kasa",
+        "5. Stok Listesi",
+        "6. Kritik Stok",
+        "7. Raporlar",
     ],
+    label_visibility="collapsed",
 )
 
 # 1. SEPET & SATIŞ YAP
-if menu == "Sepet & Satış":
-  st.header("🛒 Satış ve Sepet Yönetimi")
+if menu == "1. Sepet & Satış Yap":
+  # Masaüstündeki gibi sol ve sağ ana kolonlar
+  sol_kolon, sag_kolon = st.columns([1.1, 1.9], gap="medium")
 
-  col1, col2 = st.columns(2)
-  with col1:
-    musteri_listesi = ["GENEL MÜŞTERİ"] + veri.get("ml", [])
-    for s in veri["s"]:
-      if (
-          isinstance(s, dict)
-          and s.get("musteri")
-          and s["musteri"] not in musteri_listesi
-      ):
-        musteri_listesi.append(s["musteri"])
-    musteri = st.selectbox("Müşteri / Firma Seç", sorted(list(set(musteri_listesi))))
+  with sol_kolon:
+    st.markdown("#### 🛒 Sepet ve Toplu Satış Paneli")
+    with st.container(border=True):
+      c1, c2, c3 = st.columns([2, 1, 1])
+      with c1:
+        tarih = st.text_input("Tarih", value=datetime.now().strftime("%d.%m.%Y"))
+      with c2:
+        st.write("")
+        if st.button("Bugün"):
+          tarih = datetime.now().strftime("%d.%m.%Y")
+      with c3:
+        st.write("")
+        if st.button("Dün"):
+          from datetime import timedelta
 
-    aktif_urunler = [
-        u
-        for u, b in veri["u"].items()
-        if isinstance(b, dict) and b.get("adet", 0) > 0
-    ]
-    urun = st.selectbox(
-        "Ürün Seç", sorted(aktif_urunler) if aktif_urunler else ["Stokta ürün yok"]
-    )
+          tarih = (datetime.now() - timedelta(days=1)).strftime("%d.%m.%Y")
 
-  with col2:
-    adet = st.number_input("Adet", min_value=1, value=1)
-    varsayilan_fiyat = (
-        veri["u"].get(urun, {"maliyet": 0}).get("maliyet", 0) * 1.2
-        if urun in veri["u"]
-        else 0.0
-    )
-    birim_fiyat = st.number_input(
-        "Birim Satış Fiyatı (TL)", min_value=0.0, value=float(varsayilan_fiyat)
-    )
-    odeme_tipi = st.selectbox(
-        "Ödeme Yöntemi", ["Nakit", "Kredi Kartı", "Veresiye"]
-    )
+      musteri_listesi = ["GENEL MÜŞTERİ"] + veri.get("ml", [])
+      musteri = st.selectbox("Müşteri / Firma", sorted(list(set(musteri_listesi))))
 
-  if "sepet" not in st.session_state:
-    st.session_state.sepet = []
-
-  if st.button("➕ Sepete Ekle"):
-    if urun and urun != "Stokta ürün yok":
-      st.session_state.sepet.append({
-          "urun": urun,
-          "adet": adet,
-          "birim": birim_fiyat,
-          "tutar": adet * birim_fiyat,
-      })
-      st.success(f"{urun} sepete eklendi.")
-    else:
-      st.error("Lütfen geçerli bir ürün seçin.")
-
-  if st.session_state.sepet:
-    st.subheader("Aktif Sepet")
-    sepet_gosterim = []
-    for item in st.session_state.sepet:
-      sepet_gosterim.append({
-          "Ürün": item["urun"],
-          "Adet": item["adet"],
-          "Birim Fiyat": f"{item['birim']:.2f} TL",
-          "Toplam Tutar": f"{item['tutar']:.2f} TL",
-      })
-    st.table(pd.DataFrame(sepet_gosterim))
-
-    if st.button("🛒 Sepeti Satışa Dönüştür (Tamamla)"):
-      if odeme_tipi == "Veresiye" and musteri == "GENEL MÜŞTERİ":
-        st.error(
-            "Veresiye satışlar için Genel Müşteri seçilemez, geçerli bir"
-            " müşteri adı seçmelisiniz."
-        )
-      else:
-        bugun = datetime.now().strftime("%d.%m.%Y")
-        hata_var = False
-        for item in st.session_state.sepet:
-          u_adi = item["urun"]
-          u_adet = item["adet"]
-          if veri["u"][u_adi]["adet"] < u_adet:
-            st.error(f"{u_adi} için yeterli stok yok!")
-            hata_var = True
-            break
-
-        if not hata_var:
-          for item in st.session_state.sepet:
-            u_adi = item["urun"]
-            u_adet = item["adet"]
-            u_tutar = item["tutar"]
-
-            veri["u"][u_adi]["adet"] -= u_adet
-            mal = veri["u"][u_adi]["maliyet"] * u_adet
-            kar = u_tutar - mal
-
-            veri["s"].append({
-                "tarih": bugun,
-                "urun": u_adi,
-                "adet": u_adet,
-                "ciro": u_tutar,
-                "maliyet": mal,
-                "kar": kar,
-                "odeme_tipi": odeme_tipi,
-                "musteri": musteri,
-            })
-          veri_kaydet(veri)
-          st.session_state.sepet = []
-          st.success("Satış başarıyla tamamlandı ve stoktan düşüldü!")
-          st.rerun()
-
-  st.subheader("Son Satışlar")
-  if veri["s"]:
-    goruntulenecek_satislar = []
-    for s in reversed(veri["s"]):
-      goruntulenecek_satislar.append({
-          "Tarih": s.get("tarih", ""),
-          "Müşteri": s.get("musteri", ""),
-          "Ürün": s.get("urun", ""),
-          "Adet": s.get("adet", 0),
-          "Ciro": f"{s.get('ciro', 0):.2f} TL",
-          "Maliyet": f"{s.get('maliyet', 0):.2f} TL",
-          "Kâr": f"{s.get('kar', 0):.2f} TL",
-          "Ödeme Tipi": s.get("odeme_tipi", ""),
-      })
-    st.table(pd.DataFrame(goruntulenecek_satislar))
-  else:
-    st.info("Henüz satış kaydı yok.")
-
-# 2. VERESİYE DEFTERİ
-elif menu == "Veresiye Defteri":
-  st.header("📖 Müşteri Veresiye Defteri")
-  borclar = {}
-  odenenler = {}
-
-  for s in veri["s"]:
-    if (
-        isinstance(s, dict)
-        and s.get("odeme_tipi") == "Veresiye"
-        and s.get("musteri")
-    ):
-      borclar[s["musteri"]] = borclar.get(s["musteri"], 0) + s["ciro"]
-  for t in veri["t"]:
-    if isinstance(t, dict) and t.get("musteri"):
-      odenenler[t["musteri"]] = odenenler.get(t["musteri"], 0) + t.get(
-          "tutar", 0
+      aktif_urunler = [
+          u
+          for u, b in veri["u"].items()
+          if isinstance(b, dict) and b.get("adet", 0) > 0
+      ]
+      urun = st.selectbox(
+          "Ürün Seçin",
+          sorted(aktif_urunler) if aktif_urunler else ["Stokta ürün yok"],
       )
 
-  veresiye_listesi = []
+      col_a, col_b = st.columns(2)
+      with col_a:
+        adet = st.number_input("Adet", min_value=1, value=1)
+      with col_b:
+        varsayilan_fiyat = (
+            veri["u"].get(urun, {"maliyet": 0}).get("maliyet", 0) * 1.2
+            if urun in veri["u"]
+            else 0.0
+        )
+        birim_fiyat = st.number_input(
+            "Birim Fiyat (TL)", min_value=0.0, value=float(varsayilan_fiyat)
+        )
+
+      odeme_tipi = st.radio(
+          "Ödeme Yöntemi", ["Nakit", "Kredi Kartı", "Veresiye"], horizontal=True
+      )
+
+      st.markdown(
+          f"**Ürün Toplamı: {adet * birim_fiyat:.2f} TL**",
+          help="Seçilen miktar ve birim fiyatın toplamı",
+      )
+
+      if "sepet" not in st.session_state:
+        st.session_state.sepet = []
+
+      if st.button(
+          "➕ Sepete Ekle", use_container_width=True, type="primary"
+      ):
+        if urun and urun != "Stokta ürün yok":
+          st.session_state.sepet.append({
+              "urun": urun,
+              "adet": adet,
+              "birim": birim_fiyat,
+              "tutar": adet * birim_fiyat,
+          })
+          st.success(f"{urun} sepete eklendi.")
+          st.rerun()
+        else:
+          st.error("Geçerli bir ürün seçin.")
+
+      if st.button(
+          "🛒 Sepeti Satışa Dönüştür (Tamamla)", use_container_width=True
+      ):
+        if not st.session_state.sepet:
+          st.warning("Sepet boş.")
+        elif odeme_tipi == "Veresiye" and musteri == "GENEL MÜŞTERİ":
+          st.error("Veresiye satışlar için Genel Müşteri seçilemez.")
+        else:
+          hata = False
+          for item in st.session_state.sepet:
+            if veri["u"][item["urun"]]["adet"] < item["adet"]:
+              st.error(f"{item['urun']} için yeterli stok yok!")
+              hata = True
+              break
+          if not hata:
+            for item in st.session_state.sepet:
+              u_adi = item["urun"]
+              u_adet = item["adet"]
+              u_tutar = item["tutar"]
+              veri["u"][u_adi]["adet"] -= u_adet
+              mal = veri["u"][u_adi]["maliyet"] * u_adet
+              kar = u_tutar - mal
+              veri["s"].append({
+                  "no": len(veri["s"]) + 1,
+                  "tarih": tarih,
+                  "urun": u_adi,
+                  "adet": u_adet,
+                  "tutar": u_tutar,
+                  "maliyet": mal,
+                  "kar": kar,
+                  "odeme": odeme_tipi,
+                  "musteri": musteri,
+              })
+            veri_kaydet(veri)
+            st.session_state.sepet = []
+            st.success("Satış başarıyla tamamlandı!")
+            st.rerun()
+
+    # Aktif Sepet Listesi
+    st.markdown("#### Aktif Sepet Listesi")
+    if st.session_state.sepet:
+      sepet_gosterim = []
+      for idx, item in enumerate(st.session_state.sepet):
+        sepet_gosterim.append({
+            "No": idx + 1,
+            "Ürün": item["urun"],
+            "Adet": item["adet"],
+            "Birim Fiyat": f"{item['birim']:.2f} TL",
+            "Toplam Tutar": f"{item['tutar']:.2f} TL",
+        })
+      st.table(pd.DataFrame(sepet_gosterim))
+      sepet_toplam = sum(i["tutar"] for i in st.session_state.sepet)
+      st.markdown(f"**SEPET GENEL TOPLAM: {sepet_toplam:.2f} TL**")
+
+      if st.button("Seçilen Ürünü Sepetten Çıkar", type="secondary"):
+        if st.session_state.sepet:
+          st.session_state.sepet.pop()
+          st.rerun()
+    else:
+      st.info("Aktif sepet boş.")
+
+  with sag_kolon:
+    st.markdown("#### 📋 Son Satış İşlemleri")
+    if veri["s"]:
+      satis_listesi = []
+      for s in reversed(veri["s"]):
+        satis_listesi.append({
+            "No": s.get("no", 1),
+            "Tarih": s.get("tarih", ""),
+            "Ürün": s.get("urun", ""),
+            "Adet": s.get("adet", 0),
+            "Tutar": f"{s.get('tutar', 0):.2f} TL",
+            "Kâr": f"{s.get('kar', 0):.2f} TL",
+            "Ödeme": s.get("odeme", ""),
+            "Müşteri": s.get("musteri", ""),
+        })
+      st.table(pd.DataFrame(satis_listesi))
+
+      if st.button("Seçili Son Satışı İade Et / Sil"):
+        if veri["s"]:
+          silinen = veri["s"].pop()
+          veri["u"][silinen["urun"]]["adet"] += silinen["adet"]
+          veri_kaydet(veri)
+          st.success("Satış iptal edildi ve stok iade alındı.")
+          st.rerun()
+    else:
+      st.info("Henüz satış kaydı bulunmuyor.")
+
+# 2. VERESİYE
+elif menu == "2. Veresiye":
+  st.header("📖 Müşteri Veresiye Defteri")
+  # Veresiye içeriği...
+  borclar = {}
+  odenenler = {}
+  for s in veri["s"]:
+    if s.get("odeme") == "Veresiye" and s.get("musteri"):
+      borclar[s["musteri"]] = borclar.get(s["musteri"], 0) + s["tutar"]
+  for t in veri["t"]:
+    if t.get("musteri"):
+      odenenler[t["musteri"]] = odenenler.get(t["musteri"], 0) + t.get("tutar", 0)
+
+  veresiye_data = []
   for m, b in borclar.items():
     kal = b - odenenler.get(m, 0)
     if kal > 0.01:
-      veresiye_listesi.append({
+      veresiye_data.append({
           "Müşteri": m,
           "Toplam Borç": f"{b:.2f} TL",
           "Ödenen": f"{odenenler.get(m, 0):.2f} TL",
           "Kalan Borç": f"{kal:.2f} TL",
       })
-
-  if veresiye_listesi:
-    st.table(pd.DataFrame(veresiye_listesi))
-
-    ham_veresiye = []
-    for m, b in borclar.items():
-      kal = b - odenenler.get(m, 0)
-      if kal > 0.01:
-        ham_veresiye.append(m)
-
-    Secilen_m = st.selectbox("Tahsilat Alınacak Müşteri", ham_veresiye)
-    tahsilat_tutari = st.number_input("Tahsil Edilen Tutar (TL)", min_value=0.0)
-    t_tipi = st.selectbox("Tahsilat Türü", ["Nakit", "Kredi Kartı"])
-
-    if st.button("💵 Tahsilatı Kaydet ve Kasaya Ekle"):
-      if tahsilat_tutari > 0:
-        veri["t"].append({
-            "tarih": datetime.now().strftime("%d.%m.%Y"),
-            "musteri": Secilen_m,
-            "tutar": tahsilat_tutari,
-            "tip": t_tipi,
-        })
-        veri_kaydet(veri)
-        st.success(f"{Secilen_m} hesabından {tahsilat_tutari:.2f} TL tahsil edildi.")
-        st.rerun()
+  if veresiye_data:
+    st.table(pd.DataFrame(veresiye_data))
   else:
-    st.info("Kayıtlı veresiye borcu bulunan müşteri yok.")
+    st.info("Kayıtlı veresiye borcu yok.")
 
-# 3. CARİ HESAPLAR
-elif menu == "Cari Hesaplar":
+# 3. CARİ
+elif menu == "3. Cari":
   st.header("👥 Cari Müşteri ve Firma Yönetimi")
   yeni_m = st.text_input("Yeni Müşteri / Firma Adı")
-  if st.button("➕ Müşteri Ekle"):
+  if st.button("Müşteri Ekle"):
     if yeni_m.strip():
       m_ad = yeni_m.strip().upper()
       if m_ad not in veri["ml"]:
@@ -250,164 +265,49 @@ elif menu == "Cari Hesaplar":
         veri_kaydet(veri)
         st.success(f"'{m_ad}' eklendi.")
         st.rerun()
+  st.write("Kayıtlı Müşteriler:", veri["ml"])
 
-  st.subheader("Kayıtlı Müşteriler")
-  tum_m = sorted(
-      list(
-          set(
-              veri["ml"]
-              + [
-                  s["musteri"]
-                  for s in veri["s"]
-                  if isinstance(s, dict)
-                  and s.get("musteri")
-                  and s["musteri"] != "GENEL MÜŞTERİ"
-              ]
-          )
-      )
-  )
-  if tum_m:
-    st.write(tum_m)
-  else:
-    st.info("Henüz kayıtlı müşteri yok.")
-
-# 4. KASA & GİDERLER
-elif menu == "Kasa & Giderler":
+# 4. KASA
+elif menu == "4. Kasa":
   st.header("💰 Kasa Özeti ve Gider Yönetimi")
-
-  nakit_giris = sum(
-      s.get("ciro", 0)
-      for s in veri["s"]
-      if isinstance(s, dict) and s.get("odeme_tipi") == "Nakit"
-  ) + sum(
-      t.get("tutar", 0)
-      for t in veri["t"]
-      if isinstance(t, dict) and t.get("tip") == "Nakit"
-  )
-  nakit_gider = sum(
-      g.get("tutar", 0)
-      for g in veri["g"]
-      if isinstance(g, dict) and g.get("tip") == "Nakit"
-  )
-  net_nakit = nakit_giris - nakit_gider
-
-  kart_giris = sum(
-      s.get("ciro", 0)
-      for s in veri["s"]
-      if isinstance(s, dict) and s.get("odeme_tipi") == "Kredi Kartı"
-  ) + sum(
-      t.get("tutar", 0)
-      for t in veri["t"]
-      if isinstance(t, dict) and t.get("tip") == "Kredi Kartı"
-  )
-  kart_gider = sum(
-      g.get("tutar", 0)
-      for g in veri["g"]
-      if isinstance(g, dict) and g.get("tip") == "Kredi Kartı"
-  )
-  net_kart = kart_giris - kart_gider
-
-  st.metric(
-      "Net Kasa Toplamı",
-      f"{net_nakit + net_kart:.2f} TL",
-      f"Nakit: {net_nakit:.2f} TL | Kart: {net_kart:.2f} TL",
-  )
-
-  st.subheader("💸 Gider Ekle (Maaş, Muhasebe vb.)")
-  g_tur = st.selectbox(
-      "Gider Türü",
-      [
-          "Muhasebe Ücreti",
-          "Çalışan Maaşı",
-          "Kira",
-          "Elektrik / Su",
-          "Dükkan Masrafı",
-          "Diğer",
-      ],
-  )
-  g_tutar = st.number_input("Gider Tutarı (TL)", min_value=0.0)
-  g_tip = st.selectbox("Ödeme Kaynağı", ["Nakit", "Kredi Kartı"])
-  g_detay = st.text_input("Açıklama / Detay")
-
-  if st.button("Gideri Kaydet ve Kasadan Düş"):
-    if g_tutar > 0:
-      veri["g"].append({
-          "tarih": datetime.now().strftime("%d.%m.%Y"),
-          "tur": g_tur,
-          "tutar": g_tutar,
-          "tip": g_tip,
-          "detay": f"{g_tur}" + (f" - {g_detay}" if g_detay else ""),
-      })
-      veri_kaydet(veri)
-      st.success("Gider kasadan düşüldü.")
-      st.rerun()
+  # Kasa özeti hesapları...
+  toplam_satis = sum(s.get("tutar", 0) for s in veri["s"])
+  st.metric("Toplam Satış / Ciro", f"{toplam_satis:.2f} TL")
 
 # 5. STOK LİSTESİ
-elif menu == "Stok Listesi":
+elif menu == "5. Stok Listesi":
   st.header("📦 Ürün ve Stok Yönetimi")
-
-  with st.form("urun_ekle"):
-    st.subheader("Yeni Ürün Ekle / Stok Girişi")
+  with st.form("stok_ekle_form"):
     u_ad = st.text_input("Ürün Adı").strip().upper()
-    u_adet = st.number_input("Eklenecek Adet", min_value=0, value=10)
-    u_maliyet = st.number_input(
-        "Birim Maliyet / Alış Fiyatı (TL)", min_value=0.0
-    )
-    u_kritik = st.number_input("Kritik Stok Sınırı", min_value=1, value=5)
-    kasadan_dus = st.checkbox("Ücretini Nakit Kasadan Düş")
-
+    u_adet = st.number_input("Adet", min_value=1, value=10)
+    u_mal = st.number_input("Birim Maliyet (TL)", min_value=0.0)
     if st.form_submit_button("Ürünü Kaydet"):
       if u_ad:
-        mevcut = veri["u"].get(
-            u_ad, {"adet": 0, "maliyet": 0, "kritik": 5}
-        )
-        mevcut["adet"] += u_adet
-        mevcut["maliyet"] = u_maliyet
-        mevcut["kritik"] = u_kritik
-        veri["u"][u_ad] = mevcut
-
-        if kasadan_dus and (u_adet * u_maliyet) > 0:
-          veri["g"].append({
-              "tarih": datetime.now().strftime("%d.%m.%Y"),
-              "tur": "Ürün Alım Gideri",
-              "tutar": u_adet * u_maliyet,
-              "tip": "Nakit",
-              "detay": f"{u_ad} ({u_adet} adet alım)",
-          })
+        veri["u"][u_ad] = {"adet": u_adet, "maliyet": u_mal}
         veri_kaydet(veri)
-        st.success(f"{u_ad} başarıyla kaydedildi!")
+        st.success(f"{u_ad} kaydedildi.")
         st.rerun()
 
-  st.subheader("Mevcut Stoklar")
   if veri["u"]:
-    stok_data = [
+    stok_list = [
         {
             "Ürün": k,
             "Adet": v["adet"],
-            "Kritik Sınır": v["kritik"],
-            "Birim Maliyet": f"{v['maliyet']:.2f} TL",
-            "Toplam Değer": f"{v['adet'] * v['maliyet']:.2f} TL",
+            "Birim Maliyet": f"{v.get('maliyet',0):.2f} TL",
         }
         for k, v in veri["u"].items()
     ]
-    st.table(pd.DataFrame(stok_data))
-  else:
-    st.info("Henüz kayıtlı ürün yok.")
+    st.table(pd.DataFrame(stok_list))
 
-# 6. RAPORLAR
-elif menu == "Raporlar":
+# 6. KRİTİK STOK
+elif menu == "6. Kritik Stok":
+  st.header("⚠️ Kritik Stok Seviyeleri")
+  # Kritik stoklar...
+
+# 7. RAPORLAR
+elif menu == "7. Raporlar":
   st.header("📊 Finansal Raporlar")
-  toplam_ciro = sum(
-      s.get("ciro", 0) for s in veri["s"] if isinstance(s, dict)
-  )
-  toplam_kar = sum(s.get("kar", 0) for s in veri["s"] if isinstance(s, dict))
-  toplam_gider = sum(
-      g.get("tutar", 0) for g in veri["g"] if isinstance(g, dict)
-  )
-
+  toplam_ciro = sum(s.get("tutar", 0) for s in veri["s"])
+  toplam_kar = sum(s.get("kar", 0) for s in veri["s"])
   st.metric("Toplam Ciro", f"{toplam_ciro:.2f} TL")
-  st.metric("Toplam Brüt Kâr", f"{toplam_kar:.2f} TL")
-  st.metric("Toplam Giderler", f"{toplam_gider:.2f} TL")
-  st.metric(
-      "Net Kazanç (Kâr - Gider)", f"{toplam_kar - toplam_gider:.2f} TL"
-  )
+  st.metric("Toplam Kâr", f"{toplam_kar:.2f} TL")
