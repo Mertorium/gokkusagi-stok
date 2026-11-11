@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import os
 import pandas as pd
@@ -43,28 +43,25 @@ veri = veri_yukle()
 
 # Üst Başlık
 st.markdown(
-    "### 🌈 GÖKKUŞAĞI TEMİZLİK VE AMBALAJ - Stok & Finans Yönetimi"
+    "<h1 style='text-align: center;'>🌈 GÖKKUŞAĞI TEMİZLİK VE AMBALAJ - Stok &"
+    " Finans Yönetimi</h1>",
+    unsafe_allow_html=True,
 )
 st.divider()
 
-# Menü Sekmeleri (Üst Sekme Görünümü)
-menu = st.selectbox(
-    "Menü Sekmeleri",
-    [
-        "1. Sepet & Satış Yap",
-        "2. Veresiye",
-        "3. Cari",
-        "4. Kasa",
-        "5. Stok Listesi",
-        "6. Kritik Stok",
-        "7. Raporlar",
-    ],
-    label_visibility="collapsed",
-)
+# Yatay Sekmeler (st.tabs)
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    "Sepet & Satış Yap",
+    "Veresiye",
+    "Cari",
+    "Kasa",
+    "Stok Listesi",
+    "Kritik Stok",
+    "Raporlar",
+])
 
 # 1. SEPET & SATIŞ YAP
-if menu == "1. Sepet & Satış Yap":
-  # Masaüstündeki gibi sol ve sağ ana kolonlar
+with tab1:
   sol_kolon, sag_kolon = st.columns([1.1, 1.9], gap="medium")
 
   with sol_kolon:
@@ -72,7 +69,9 @@ if menu == "1. Sepet & Satış Yap":
     with st.container(border=True):
       c1, c2, c3 = st.columns([2, 1, 1])
       with c1:
-        tarih = st.text_input("Tarih", value=datetime.now().strftime("%d.%m.%Y"))
+        tarih = st.text_input(
+            "Tarih", value=datetime.now().strftime("%d.%m.%Y"), key="sepet_tarih"
+        )
       with c2:
         st.write("")
         if st.button("Bugün"):
@@ -80,12 +79,12 @@ if menu == "1. Sepet & Satış Yap":
       with c3:
         st.write("")
         if st.button("Dün"):
-          from datetime import timedelta
-
           tarih = (datetime.now() - timedelta(days=1)).strftime("%d.%m.%Y")
 
       musteri_listesi = ["GENEL MÜŞTERİ"] + veri.get("ml", [])
-      musteri = st.selectbox("Müşteri / Firma", sorted(list(set(musteri_listesi))))
+      musteri = st.selectbox(
+          "Müşteri / Firma", sorted(list(set(musteri_listesi)))
+      )
 
       aktif_urunler = [
           u
@@ -99,7 +98,7 @@ if menu == "1. Sepet & Satış Yap":
 
       col_a, col_b = st.columns(2)
       with col_a:
-        adet = st.number_input("Adet", min_value=1, value=1)
+        adet = st.number_input("Adet", min_value=1, value=1, key="sepet_adet")
       with col_b:
         varsayilan_fiyat = (
             veri["u"].get(urun, {"maliyet": 0}).get("maliyet", 0) * 1.2
@@ -107,11 +106,16 @@ if menu == "1. Sepet & Satış Yap":
             else 0.0
         )
         birim_fiyat = st.number_input(
-            "Birim Fiyat (TL)", min_value=0.0, value=float(varsayilan_fiyat)
+            "Birim Fiyat (TL)",
+            min_value=0.0,
+            value=float(varsayilan_fiyat),
+            key="sepet_fiyat",
         )
 
       odeme_tipi = st.radio(
-          "Ödeme Yöntemi", ["Nakit", "Kredi Kartı", "Veresiye"], horizontal=True
+          "Ödeme Yöntemi",
+          ["Nakit", "Kredi Kartı", "Veresiye"],
+          horizontal=True,
       )
 
       st.markdown(
@@ -226,9 +230,8 @@ if menu == "1. Sepet & Satış Yap":
       st.info("Henüz satış kaydı bulunmuyor.")
 
 # 2. VERESİYE
-elif menu == "2. Veresiye":
+with tab2:
   st.header("📖 Müşteri Veresiye Defteri")
-  # Veresiye içeriği...
   borclar = {}
   odenenler = {}
   for s in veri["s"]:
@@ -254,9 +257,9 @@ elif menu == "2. Veresiye":
     st.info("Kayıtlı veresiye borcu yok.")
 
 # 3. CARİ
-elif menu == "3. Cari":
+with tab3:
   st.header("👥 Cari Müşteri ve Firma Yönetimi")
-  yeni_m = st.text_input("Yeni Müşteri / Firma Adı")
+  yeni_m = st.text_input("Yeni Müşteri / Firma Adı", key="cari_yeni_m")
   if st.button("Müşteri Ekle"):
     if yeni_m.strip():
       m_ad = yeni_m.strip().upper()
@@ -268,14 +271,13 @@ elif menu == "3. Cari":
   st.write("Kayıtlı Müşteriler:", veri["ml"])
 
 # 4. KASA
-elif menu == "4. Kasa":
+with tab4:
   st.header("💰 Kasa Özeti ve Gider Yönetimi")
-  # Kasa özeti hesapları...
   toplam_satis = sum(s.get("tutar", 0) for s in veri["s"])
   st.metric("Toplam Satış / Ciro", f"{toplam_satis:.2f} TL")
 
 # 5. STOK LİSTESİ
-elif menu == "5. Stok Listesi":
+with tab5:
   st.header("📦 Ürün ve Stok Yönetimi")
   with st.form("stok_ekle_form"):
     u_ad = st.text_input("Ürün Adı").strip().upper()
@@ -300,12 +302,20 @@ elif menu == "5. Stok Listesi":
     st.table(pd.DataFrame(stok_list))
 
 # 6. KRİTİK STOK
-elif menu == "6. Kritik Stok":
+with tab6:
   st.header("⚠️ Kritik Stok Seviyeleri")
-  # Kritik stoklar...
+  kritik_liste = [
+      {"Ürün": k, "Adet": v["adet"]}
+      for k, v in veri["u"].items()
+      if v["adet"] <= 5
+  ]
+  if kritik_liste:
+    st.table(pd.DataFrame(kritik_liste))
+  else:
+    st.success("Kritik seviyede ürün bulunmuyor.")
 
 # 7. RAPORLAR
-elif menu == "7. Raporlar":
+with tab7:
   st.header("📊 Finansal Raporlar")
   toplam_ciro = sum(s.get("tutar", 0) for s in veri["s"])
   toplam_kar = sum(s.get("kar", 0) for s in veri["s"])
