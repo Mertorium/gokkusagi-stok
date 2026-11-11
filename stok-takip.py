@@ -179,7 +179,6 @@ with tab1:
             st.success("Satış başarıyla tamamlandı!")
             st.rerun()
 
-    # Aktif Sepet Listesi
     st.markdown("#### Aktif Sepet Listesi")
     if st.session_state.sepet:
       sepet_gosterim = []
@@ -281,11 +280,31 @@ with tab5:
   st.header("📦 Ürün ve Stok Yönetimi")
   with st.form("stok_ekle_form"):
     u_ad = st.text_input("Ürün Adı").strip().upper()
-    u_adet = st.number_input("Adet", min_value=1, value=10)
+    col_s1, col_s2 = st.columns(2)
+    with col_s1:
+      u_adet = st.number_input("Adet", min_value=1, value=10)
+    with col_s2:
+      u_kritik = st.number_input(
+          "Kritik Stok Eşiği",
+          min_value=0,
+          value=5,
+          help="Bu adedin altına düşerse kritik stokta görünür.",
+      )
     u_mal = st.number_input("Birim Maliyet (TL)", min_value=0.0)
+
     if st.form_submit_button("Ürünü Kaydet"):
       if u_ad:
-        veri["u"][u_ad] = {"adet": u_adet, "maliyet": u_mal}
+        # Eğer ürün zaten varsa kritik stok bilgisini koru veya güncelle
+        mevcut_kritik = (
+            veri["u"][u_ad].get("kritik", u_kritik)
+            if u_ad in veri["u"]
+            else u_kritik
+        )
+        veri["u"][u_ad] = {
+            "adet": u_adet,
+            "maliyet": u_mal,
+            "kritik": mevcut_kritik,
+        }
         veri_kaydet(veri)
         st.success(f"{u_ad} kaydedildi.")
         st.rerun()
@@ -295,6 +314,7 @@ with tab5:
         {
             "Ürün": k,
             "Adet": v["adet"],
+            "Kritik Eşik": v.get("kritik", 5),
             "Birim Maliyet": f"{v.get('maliyet',0):.2f} TL",
         }
         for k, v in veri["u"].items()
@@ -304,11 +324,14 @@ with tab5:
 # 6. KRİTİK STOK
 with tab6:
   st.header("⚠️ Kritik Stok Seviyeleri")
-  kritik_liste = [
-      {"Ürün": k, "Adet": v["adet"]}
-      for k, v in veri["u"].items()
-      if v["adet"] <= 5
-  ]
+  kritik_liste = []
+  for k, v in veri["u"].items():
+    esik = v.get("kritik", 5)
+    if v["adet"] <= esik:
+      kritik_liste.append(
+          {"Ürün": k, "Mevcut Adet": v["adet"], "Kritik Eşik": esik}
+      )
+
   if kritik_liste:
     st.table(pd.DataFrame(kritik_liste))
   else:
