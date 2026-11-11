@@ -275,40 +275,84 @@ with tab4:
   toplam_satis = sum(s.get("tutar", 0) for s in veri["s"])
   st.metric("Toplam Satış / Ciro", f"{toplam_satis:.2f} TL")
 
-# 5. STOK LİSTESİ
+# 5. STOK LİSTESİ (YENİ: Ürün Ekleme, Düzenleme ve Silme Özelliği Eklendi)
 with tab5:
   st.header("📦 Ürün ve Stok Yönetimi")
+
+  st.subheader("➕ Yeni Ürün Ekle")
   with st.form("stok_ekle_form"):
     u_ad = st.text_input("Ürün Adı").strip().upper()
     col_s1, col_s2 = st.columns(2)
     with col_s1:
       u_adet = st.number_input("Adet", min_value=1, value=10)
     with col_s2:
-      u_kritik = st.number_input(
-          "Kritik Stok Eşiği",
-          min_value=0,
-          value=5,
-          help="Bu adedin altına düşerse kritik stokta görünür.",
-      )
+      u_kritik = st.number_input("Kritik Stok Eşiği", min_value=0, value=5)
     u_mal = st.number_input("Birim Maliyet (TL)", min_value=0.0)
 
     if st.form_submit_button("Ürünü Kaydet"):
       if u_ad:
-        # Eğer ürün zaten varsa kritik stok bilgisini koru veya güncelle
-        mevcut_kritik = (
-            veri["u"][u_ad].get("kritik", u_kritik)
-            if u_ad in veri["u"]
-            else u_kritik
-        )
         veri["u"][u_ad] = {
             "adet": u_adet,
             "maliyet": u_mal,
-            "kritik": mevcut_kritik,
+            "kritik": u_kritik,
         }
         veri_kaydet(veri)
-        st.success(f"{u_ad} kaydedildi.")
+        st.success(f"{u_ad} başarıyla kaydedildi.")
         st.rerun()
 
+  st.divider()
+  st.subheader("✏️ Stok Düzenle / Sil")
+  if veri["u"]:
+    secilen_stok = st.selectbox(
+        "Düzenlenecek veya Silinecek Ürünü Seçin", sorted(list(veri["u"].keys()))
+    )
+    mevcut_bilgi = veri["u"][secilen_stok]
+
+    with st.form("stok_duzenle_form"):
+      d_adet = st.number_input(
+          "Güncel Adet",
+          min_value=0,
+          value=int(mevcut_bilgi.get("adet", 0)),
+      )
+      d_kritik = st.number_input(
+          "Güncel Kritik Eşik",
+          min_value=0,
+          value=int(mevcut_bilgi.get("kritik", 5)),
+      )
+      d_mal = st.number_input(
+          "Güncel Birim Maliyet (TL)",
+          min_value=0.0,
+          value=float(mevcut_bilgi.get("maliyet", 0.0)),
+      )
+
+      col_d1, col_d2 = st.columns(2)
+      with col_d1:
+        guncelle_basildi = st.form_submit_button(
+            "💾 Değişiklikleri Kaydet", type="primary"
+        )
+      with col_d2:
+        sil_basildi = st.form_submit_button(
+            "🗑️ Bu Ürünü Stoktan Sil", type="secondary"
+        )
+
+      if guncelle_basildi:
+        veri["u"][secilen_stok] = {
+            "adet": d_adet,
+            "maliyet": d_mal,
+            "kritik": d_kritik,
+        }
+        veri_kaydet(veri)
+        st.success(f"{secilen_stok} güncellendi.")
+        st.rerun()
+
+      if sil_basildi:
+        del veri["u"][secilen_stok]
+        veri_kaydet(veri)
+        st.success(f"{secilen_stok} stoktan tamamen silindi.")
+        st.rerun()
+
+  st.divider()
+  st.subheader("📋 Mevcut Stok Listesi")
   if veri["u"]:
     stok_list = [
         {
@@ -320,6 +364,8 @@ with tab5:
         for k, v in veri["u"].items()
     ]
     st.table(pd.DataFrame(stok_list))
+  else:
+    st.info("Kayıtlı ürün bulunmuyor.")
 
 # 6. KRİTİK STOK
 with tab6:
