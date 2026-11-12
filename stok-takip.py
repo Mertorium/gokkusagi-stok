@@ -3,13 +3,16 @@ import io
 import json
 import os
 import pandas as pd
-reportlab_ mevcut = True
+import streamlit as st
+
+# ReportLab kütüphanesini güvenli şekilde yükleme
 try:
   from reportlab.lib.pagesizes import letter
   from reportlab.pdfgen import canvas
+
+  reportlab_mevcut = True
 except ImportError:
-  reportlab_ mevcut = False
-import streamlit as st
+  reportlab_mevcut = False
 
 st.set_page_config(
     page_title="Gökkuşağı Temizlik ve Ambalaj - Stok & Finans",
@@ -49,27 +52,19 @@ def veri_kaydet(d):
 # PDF Fiş Oluşturma Fonksiyonu (Kâr bilgisi içermez)
 def satis_fisi_pdf_olustur(satis_detay):
   buffer = io.BytesIO()
-  if reportlab_ mevcut:
+  if reportlab_mevcut:
     p = canvas.Canvas(buffer, pagesize=letter)
     width, height = letter
 
     p.setFont("Helvetica-Bold", 16)
     p.drawString(50, height - 50, "GÖKKUŞAĞI TEMİZLİK VE AMBALAJ")
     p.setFont("Helvetica", 10)
-    p.drawString(
-        50, height - 65, "Satış Fişi / Bilgilendirme Belgesi"
-    )
+    p.drawString(50, height - 65, "Satış Fişi / Bilgilendirme Belgesi")
     p.line(50, height - 75, width - 50, height - 75)
 
     p.setFont("Helvetica", 12)
-    p.drawString(
-        50,
-        height - 110,
-        f"Fiş No: #{satis_detay.get('no', 1)}",
-    )
-    p.drawString(
-        50, height - 130, f"Tarih: {satis_detay.get('tarih', '')}"
-    )
+    p.drawString(50, height - 110, f"Fiş No: #{satis_detay.get('no', 1)}")
+    p.drawString(50, height - 130, f"Tarih: {satis_detay.get('tarih', '')}")
     p.drawString(
         50, height - 150, f"Müşteri / Firma: {satis_detay.get('musteri', '')}"
     )
@@ -87,17 +82,13 @@ def satis_fisi_pdf_olustur(satis_detay):
     p.setFont("Helvetica", 12)
     p.drawString(50, height - 240, str(satis_detay.get("urun", "")))
     p.drawString(300, height - 240, str(satis_detay.get("adet", "")))
-    p.drawString(
-        380, height - 240, f"{satis_detay.get('tutar', 0):.2f} TL"
-    )
+    p.drawString(380, height - 240, f"{satis_detay.get('tutar', 0):.2f} TL")
 
     p.line(50, height - 270, width - 50, height - 270)
 
     p.setFont("Helvetica-Bold", 14)
     p.drawString(
-        300,
-        height - 300,
-        f"GENEL TOPLAM: {satis_detay.get('tutar', 0):.2f} TL",
+        300, height - 300, f"GENEL TOPLAM: {satis_detay.get('tutar', 0):.2f} TL"
     )
 
     p.showPage()
@@ -322,7 +313,7 @@ with tab1:
           )
 
           # PDF Fiş İndir Butonu
-          if reportlab_ mevcut:
+          if reportlab_mevcut:
             pdf_buffer = satis_fisi_pdf_olustur(target_satis)
             st.download_button(
                 label="📄 Seçilen Satışın Fişini PDF Olarak İndir",
@@ -332,8 +323,8 @@ with tab1:
             )
           else:
             st.warning(
-                "PDF oluşturucu (reportlab) sistemde yüklü değil, lütfen"
-                " yöneticinize bildirin."
+                "PDF oluşturucu (reportlab) sistemde yüklü değil. Lütfen"
+                " 'requirements.txt' dosyasına 'reportlab' ekleyin."
             )
 
           onay_kutu = st.checkbox(
@@ -427,7 +418,6 @@ with tab1:
 
       st.divider()
       st.markdown("#### 👤 Müşteri Bazlı Satış Başlıkları")
-      # Müşterilere göre satışları gruplama
       musteri_gruplari = {}
       for s in veri["s"]:
         m_adi = s.get("musteri", "GENEL MÜŞTERİ")
