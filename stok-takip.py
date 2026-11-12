@@ -72,7 +72,7 @@ def tr_to_ascii(text):
   return text
 
 
-# PDF Fiş Oluşturma Fonksiyonu (Kâr bilgisi içermez, karakter bozulması düzeltildi)
+# PDF Fiş Oluşturma Fonksiyonu (Ödeme yöntemi ve kâr bilgisi içermez)
 def satis_fisi_pdf_olustur(satis_detay):
   buffer = io.BytesIO()
   if reportlab_mevcut:
@@ -101,32 +101,27 @@ def satis_fisi_pdf_olustur(satis_detay):
         height - 150,
         tr_to_ascii(f"Müşteri / Firma: {satis_detay.get('musteri', '')}"),
     )
-    p.drawString(
-        50,
-        height - 170,
-        tr_to_ascii(f"Ödeme Yöntemi: {satis_detay.get('odeme', '')}"),
-    )
 
-    p.line(50, height - 190, width - 50, height - 190)
+    p.line(50, height - 170, width - 50, height - 170)
 
     p.setFont("Helvetica-Bold", 12)
-    p.drawString(50, height - 210, tr_to_ascii("Ürün Açıklaması"))
-    p.drawString(300, height - 210, tr_to_ascii("Adet"))
-    p.drawString(380, height - 210, tr_to_ascii("Toplam Tutar"))
+    p.drawString(50, height - 190, tr_to_ascii("Ürün Açıklaması"))
+    p.drawString(300, height - 190, tr_to_ascii("Adet"))
+    p.drawString(380, height - 190, tr_to_ascii("Toplam Tutar"))
 
     p.setFont("Helvetica", 12)
-    p.drawString(50, height - 240, tr_to_ascii(str(satis_detay.get("urun", ""))))
-    p.drawString(300, height - 240, tr_to_ascii(str(satis_detay.get("adet", ""))))
+    p.drawString(50, height - 220, tr_to_ascii(str(satis_detay.get("urun", ""))))
+    p.drawString(300, height - 220, tr_to_ascii(str(satis_detay.get("adet", ""))))
     p.drawString(
-        380, height - 240, tr_to_ascii(f"{satis_detay.get('tutar', 0):.2f} TL")
+        380, height - 220, tr_to_ascii(f"{satis_detay.get('tutar', 0):.2f} TL")
     )
 
-    p.line(50, height - 270, width - 50, height - 270)
+    p.line(50, height - 250, width - 50, height - 250)
 
     p.setFont("Helvetica-Bold", 14)
     p.drawString(
         300,
-        height - 300,
+        height - 280,
         tr_to_ascii(f"GENEL TOPLAM: {satis_detay.get('tutar', 0):.2f} TL"),
     )
 
