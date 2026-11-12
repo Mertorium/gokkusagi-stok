@@ -1,7 +1,14 @@
 from datetime import datetime, timedelta
+import io
 import json
 import os
 import pandas as pd
+reportlab_ mevcut = True
+try:
+  from reportlab.lib.pagesizes import letter
+  from reportlab.pdfgen import canvas
+except ImportError:
+  reportlab_ mevcut = False
 import streamlit as st
 
 st.set_page_config(
@@ -37,6 +44,66 @@ def veri_yukle():
 def veri_kaydet(d):
   with open(FILE, "w", encoding="utf-8") as f:
     json.dump(d, f, ensure_ascii=False, indent=4)
+
+
+# PDF Fiş Oluşturma Fonksiyonu (Kâr bilgisi içermez)
+def satis_fisi_pdf_olustur(satis_detay):
+  buffer = io.BytesIO()
+  if reportlab_ mevcut:
+    p = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+
+    p.setFont("Helvetica-Bold", 16)
+    p.drawString(50, height - 50, "GÖKKUŞAĞI TEMİZLİK VE AMBALAJ")
+    p.setFont("Helvetica", 10)
+    p.drawString(
+        50, height - 65, "Satış Fişi / Bilgilendirme Belgesi"
+    )
+    p.line(50, height - 75, width - 50, height - 75)
+
+    p.setFont("Helvetica", 12)
+    p.drawString(
+        50,
+        height - 110,
+        f"Fiş No: #{satis_detay.get('no', 1)}",
+    )
+    p.drawString(
+        50, height - 130, f"Tarih: {satis_detay.get('tarih', '')}"
+    )
+    p.drawString(
+        50, height - 150, f"Müşteri / Firma: {satis_detay.get('musteri', '')}"
+    )
+    p.drawString(
+        50, height - 170, f"Ödeme Yöntemi: {satis_detay.get('odeme', '')}"
+    )
+
+    p.line(50, height - 190, width - 50, height - 190)
+
+    p.setFont("Helvetica-Bold", 12)
+    p.drawString(50, height - 210, "Ürün Açıklaması")
+    p.drawString(300, height - 210, "Adet")
+    p.drawString(380, height - 210, "Toplam Tutar")
+
+    p.setFont("Helvetica", 12)
+    p.drawString(50, height - 240, str(satis_detay.get("urun", "")))
+    p.drawString(300, height - 240, str(satis_detay.get("adet", "")))
+    p.drawString(
+        380, height - 240, f"{satis_detay.get('tutar', 0):.2f} TL"
+    )
+
+    p.line(50, height - 270, width - 50, height - 270)
+
+    p.setFont("Helvetica-Bold", 14)
+    p.drawString(
+        300,
+        height - 300,
+        f"GENEL TOPLAM: {satis_detay.get('tutar', 0):.2f} TL",
+    )
+
+    p.showPage()
+    p.save()
+  buffer.seek(0)
+  return buffer
 
 
 veri = veri_yukle()
@@ -223,16 +290,16 @@ with tab1:
     else:
       st.info("Aktif sepet boş.")
 
-  # SAĞ KOLON: İstediğin Satışı Seçip İptal Etme / Düzenleme
+  # SAĞ KOLON: Müşteri Bazlı Ayrı Başlıklar, Seçmeli İptal/Düzenleme ve PDF Fiş İndirme
   with sag_kolon:
-    st.markdown("#### 📋 Seçmeli Satış İptali ve Düzenleme")
+    st.markdown("#### 📋 Müşteri Satışları ve İptal / Fiş İşlemleri")
     if veri["s"]:
       satis_secenekleri = [
           f"No: {s.get('no')} | Tarih: {s.get('tarih')} | Müşteri: {s.get('musteri')} | Ürün: {s.get('urun')} ({s.get('adet')} Adet) - {s.get('tutar'):.2f} TL"
           for s in veri["s"]
       ]
       secilen_satis_str = st.selectbox(
-          "İşlem Yapılacak Satışı Seçin",
+          "İşlem Yapılacak Satışı Seçin (İptal / İade / PDF Fiş)",
           satis_secenekleri[::-1],
           key="secilen_satis_yonetim",
       )
@@ -249,22 +316,37 @@ with tab1:
 
         if target_satis:
           st.info(
-              f"Seçilen Satış -> Ürün: {target_satis.get('urun')} | Adet:"
-              f" {target_satis.get('adet')} | Tutar:"
-              f" {target_satis.get('tutar'):.2f} TL"
+              f"Seçilen Satış -> Müşteri: {target_satis.get('musteri')} | Ürün:"
+              f" {target_satis.get('urun')} | Adet: {target_satis.get('adet')}"
+              f" | Tutar: {target_satis.get('tutar'):.2f} TL"
           )
 
+          # PDF Fiş İndir Butonu
+          if reportlab_ mevcut:
+            pdf_buffer = satis_fisi_pdf_olustur(target_satis)
+            st.download_button(
+                label="📄 Seçilen Satışın Fişini PDF Olarak İndir",
+                data=pdf_buffer,
+                file_name=f"Satis_Fisi_No_{target_satis.get('no')}.pdf",
+                mime="application/pdf",
+            )
+          else:
+            st.warning(
+                "PDF oluşturucu (reportlab) sistemde yüklü değil, lütfen"
+                " yöneticinize bildirin."
+            )
+
           onay_kutu = st.checkbox(
-              "⚠️ Bu işlem için onay veriyorum", key=f"onay_{satis_no_str}"
+              "⚠️ İptal/İade işlemi için onay veriyorum",
+              key=f"onay_{satis_no_str}",
           )
 
           col_islem1, col_islem2 = st.columns(2)
           with col_islem1:
-            if st.button("🗑️ Seçilen Satışı İptal Et / Sil"):
+            if st.button("🗑️ Seçilen Satışı Tamamen İptal Et"):
               if not onay_kutu:
                 st.error("Lütfen önce onay kutusunu işaretleyin!")
               else:
-                # Stoğa iade et
                 u_adi = target_satis.get("urun")
                 iade_adet = target_satis.get("adet")
                 if u_adi not in veri["u"]:
@@ -284,8 +366,7 @@ with tab1:
                 veri["s"].pop(satis_idx)
                 veri_kaydet(veri)
                 st.success(
-                    "Satış iptal edildi ve ürünler otomatik olarak stoğa geri"
-                    " eklendi."
+                    "Satış iptal edildi ve ürünler stoğa geri eklendi."
                 )
                 st.rerun()
 
@@ -339,25 +420,36 @@ with tab1:
 
                   veri_kaydet(veri)
                   st.success(
-                      f"{iade_parca_adet} adet ürün iade alındı ve stoğa eklendi."
+                      f"{iade_parca_adet} adet ürün iade alındı ve stoğa"
+                      " eklendi."
                   )
                   st.rerun()
 
       st.divider()
-      st.markdown("#### 📜 Tüm Satış Geçmişi")
-      satis_listesi = []
-      for s in reversed(veri["s"]):
-        satis_listesi.append({
-            "No": s.get("no", 1),
-            "Tarih": s.get("tarih", ""),
-            "Ürün": s.get("urun", ""),
-            "Adet": s.get("adet", 0),
-            "Tutar": f"{s.get('tutar', 0):.2f} TL",
-            "Kâr": f"{s.get('kar', 0):.2f} TL",
-            "Ödeme": s.get("odeme", ""),
-            "Müşteri": s.get("musteri", ""),
-        })
-      st.table(pd.DataFrame(satis_listesi))
+      st.markdown("#### 👤 Müşteri Bazlı Satış Başlıkları")
+      # Müşterilere göre satışları gruplama
+      musteri_gruplari = {}
+      for s in veri["s"]:
+        m_adi = s.get("musteri", "GENEL MÜŞTERİ")
+        if m_adi not in musteri_gruplari:
+          musteri_gruplari[m_adi] = []
+        musteri_gruplari[m_adi].append(s)
+
+      for m_adi, m_satislar in musteri_gruplari.items():
+        with st.expander(
+            f"🏷️ {m_adi} ({len(m_satislar)} Satış İşlemi)", expanded=False
+        ):
+          m_tablo = []
+          for s in reversed(m_satislar):
+            m_tablo.append({
+                "No": s.get("no"),
+                "Tarih": s.get("tarih"),
+                "Ürün": s.get("urun"),
+                "Adet": s.get("adet"),
+                "Toplam Tutar": f"{s.get('tutar'):.2f} TL",
+                "Ödeme": s.get("odeme"),
+            })
+          st.table(pd.DataFrame(m_tablo))
     else:
       st.info("Henüz satış kaydı bulunmuyor.")
 
@@ -402,11 +494,10 @@ with tab3:
         st.rerun()
   st.write("Kayıtlı Müşteriler:", veri["ml"])
 
-# 4. KASA (Kasa Geçmişi ve Günlük Özetler)
+# 4. KASA
 with tab4:
   st.header("💰 Kasa ve Nakit Bakiye Yönetimi")
 
-  # Nakit Bakiye Hesaplama (Nakit Satışlar - Kasadan düşülen giderler - Kasadan düşülen stok alımları)
   nakit_satislar_toplami = sum(
       s.get("tutar", 0) for s in veri["s"] if s.get("odeme") == "Nakit"
   )
@@ -471,7 +562,7 @@ with tab4:
   else:
     st.info(f"{secilen_kasa_tarih_str} tarihinde gider kaydı bulunmuyor.")
 
-# 5. GİDERLER (Kasadan düşme seçeneği ile)
+# 5. GİDERLER
 with tab5:
   st.header("💸 Gider Yönetimi (Maaş, Muhasebe vb.)")
   with st.form("gider_ekle_form"):
@@ -529,7 +620,7 @@ with tab5:
   else:
     st.info("Kayıtlı gider bulunmuyor.")
 
-# 6. STOK LİSTESİ (Kasadan düşme seçeneği ile)
+# 6. STOK LİSTESİ
 with tab6:
   st.header("📦 Ürün ve Stok Yönetimi (Parti Bazlı Alım)")
 
@@ -681,7 +772,7 @@ with tab7:
   else:
     st.success("Kritik seviyede ürün bulunmuyor.")
 
-# 8. RAPORLAR (Veresiye Dahil/Hariç Ciro ve Kâr Raporları)
+# 8. RAPORLAR
 with tab8:
   st.header("📊 Detaylı Finansal Raporlar")
   rapor_tarihi = st.date_input(
