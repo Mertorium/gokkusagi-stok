@@ -49,7 +49,30 @@ def veri_kaydet(d):
     json.dump(d, f, ensure_ascii=False, indent=4)
 
 
-# PDF Fiş Oluşturma Fonksiyonu (Kâr bilgisi içermez)
+# Türkçe karakterleri PDF font hatası vermemesi için dönüştürücü
+def tr_to_ascii(text):
+  if not isinstance(text, str):
+    text = str(text)
+  tr_map = {
+      "ş": "s",
+      "Ş": "S",
+      "ğ": "g",
+      "Ğ": "G",
+      "ü": "u",
+      "Ü": "U",
+      "ö": "o",
+      "Ö": "O",
+      "ç": "c",
+      "Ç": "C",
+      "ı": "i",
+      "İ": "I",
+  }
+  for k, v in tr_map.items():
+    text = text.replace(k, v)
+  return text
+
+
+# PDF Fiş Oluşturma Fonksiyonu (Kâr bilgisi içermez, karakter bozulması düzeltildi)
 def satis_fisi_pdf_olustur(satis_detay):
   buffer = io.BytesIO()
   if reportlab_mevcut:
@@ -57,38 +80,54 @@ def satis_fisi_pdf_olustur(satis_detay):
     width, height = letter
 
     p.setFont("Helvetica-Bold", 16)
-    p.drawString(50, height - 50, "GÖKKUŞAĞI TEMİZLİK VE AMBALAJ")
+    p.drawString(
+        50, height - 50, tr_to_ascii("GÖKKUŞAĞI TEMİZLİK VE AMBALAJ")
+    )
     p.setFont("Helvetica", 10)
-    p.drawString(50, height - 65, "Satış Fişi / Bilgilendirme Belgesi")
+    p.drawString(
+        50, height - 65, tr_to_ascii("Satış Fişi / Bilgilendirme Belgesi")
+    )
     p.line(50, height - 75, width - 50, height - 75)
 
     p.setFont("Helvetica", 12)
-    p.drawString(50, height - 110, f"Fiş No: #{satis_detay.get('no', 1)}")
-    p.drawString(50, height - 130, f"Tarih: {satis_detay.get('tarih', '')}")
     p.drawString(
-        50, height - 150, f"Müşteri / Firma: {satis_detay.get('musteri', '')}"
+        50, height - 110, tr_to_ascii(f"Fiş No: #{satis_detay.get('no', 1)}")
     )
     p.drawString(
-        50, height - 170, f"Ödeme Yöntemi: {satis_detay.get('odeme', '')}"
+        50, height - 130, tr_to_ascii(f"Tarih: {satis_detay.get('tarih', '')}")
+    )
+    p.drawString(
+        50,
+        height - 150,
+        tr_to_ascii(f"Müşteri / Firma: {satis_detay.get('musteri', '')}"),
+    )
+    p.drawString(
+        50,
+        height - 170,
+        tr_to_ascii(f"Ödeme Yöntemi: {satis_detay.get('odeme', '')}"),
     )
 
     p.line(50, height - 190, width - 50, height - 190)
 
     p.setFont("Helvetica-Bold", 12)
-    p.drawString(50, height - 210, "Ürün Açıklaması")
-    p.drawString(300, height - 210, "Adet")
-    p.drawString(380, height - 210, "Toplam Tutar")
+    p.drawString(50, height - 210, tr_to_ascii("Ürün Açıklaması"))
+    p.drawString(300, height - 210, tr_to_ascii("Adet"))
+    p.drawString(380, height - 210, tr_to_ascii("Toplam Tutar"))
 
     p.setFont("Helvetica", 12)
-    p.drawString(50, height - 240, str(satis_detay.get("urun", "")))
-    p.drawString(300, height - 240, str(satis_detay.get("adet", "")))
-    p.drawString(380, height - 240, f"{satis_detay.get('tutar', 0):.2f} TL")
+    p.drawString(50, height - 240, tr_to_ascii(str(satis_detay.get("urun", ""))))
+    p.drawString(300, height - 240, tr_to_ascii(str(satis_detay.get("adet", ""))))
+    p.drawString(
+        380, height - 240, tr_to_ascii(f"{satis_detay.get('tutar', 0):.2f} TL")
+    )
 
     p.line(50, height - 270, width - 50, height - 270)
 
     p.setFont("Helvetica-Bold", 14)
     p.drawString(
-        300, height - 300, f"GENEL TOPLAM: {satis_detay.get('tutar', 0):.2f} TL"
+        300,
+        height - 300,
+        tr_to_ascii(f"GENEL TOPLAM: {satis_detay.get('tutar', 0):.2f} TL"),
     )
 
     p.showPage()
