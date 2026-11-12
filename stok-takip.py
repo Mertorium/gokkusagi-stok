@@ -141,15 +141,15 @@ st.markdown(
 )
 st.divider()
 
-# Yatay Sekmeler (st.tabs)
+# İstediğin Sıralamaya Göre Yatay Sekmeler (st.tabs)
 tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "Sepet & Satış Yap",
     "Veresiye",
-    "Cari",
-    "Kasa",
-    "Giderler",
     "Stok Listesi",
     "Kritik Stok",
+    "Cari",
+    "Giderler",
+    "Kasa",
     "Raporlar",
 ])
 
@@ -504,148 +504,8 @@ with tab2:
   else:
     st.info("Kayıtlı veresiye borcu yok.")
 
-# 3. CARİ
+# 3. STOK LİSTESİ
 with tab3:
-  st.header("👥 Cari Müşteri ve Firma Yönetimi")
-  yeni_m = st.text_input("Yeni Müşteri / Firma Adı", key="cari_yeni_m")
-  if st.button("Müşteri Ekle"):
-    if yeni_m.strip():
-      m_ad = yeni_m.strip().upper()
-      if m_ad not in veri["ml"]:
-        veri["ml"].append(m_ad)
-        veri_kaydet(veri)
-        st.success(f"'{m_ad}' eklendi.")
-        st.rerun()
-  st.write("Kayıtlı Müşteriler:", veri["ml"])
-
-# 4. KASA
-with tab4:
-  st.header("💰 Kasa ve Nakit Bakiye Yönetimi")
-
-  nakit_satislar_toplami = sum(
-      s.get("tutar", 0) for s in veri["s"] if s.get("odeme") == "Nakit"
-  )
-  giderler_kasadan = sum(
-      g.get("tutar", 0) for g in veri["g"] if g.get("kasadan_dus", True)
-  )
-  stok_kasadan = sum(
-      a.get("adet", 0) * a.get("maliyet", 0)
-      for alimlar in veri["u"].values()
-      for a in alimlar
-      if a.get("kasadan_dus", True)
-  )
-
-  net_kasa_bakiye = nakit_satislar_toplami - giderler_kasadan - stok_kasadan
-
-  st.metric(
-      "Kasa Mevcut Nakit Bakiyesi",
-      f"{net_kasa_bakiye:.2f} TL",
-      help=(
-          "Nakit Satışlar - Kasadan Düşülen Giderler - Kasadan Düşülen Stok"
-          " Alımları"
-      ),
-  )
-
-  st.divider()
-  st.subheader("📅 Tarih Bazlı Kasa ve Günlük Geçmiş İnceleme")
-  kasa_tarih = st.date_input(
-      "İncelemek İstediğiniz Tarihi Seçin",
-      value=datetime.today(),
-      key="kasa_tarih_secim",
-  )
-  secilen_kasa_tarih_str = kasa_tarih.strftime("%d.%m.%Y")
-
-  g_satislar = [
-      s for s in veri["s"] if s.get("tarih") == secilen_kasa_tarih_str
-  ]
-  g_giderler = [
-      g for g in veri["g"] if g.get("tarih") == secilen_kasa_tarih_str
-  ]
-
-  g_ciro_dahil = sum(s.get("tutar", 0) for s in g_satislar)
-  g_kar_dahil = sum(s.get("kar", 0) for s in g_satislar)
-  g_toplam_gider = sum(g.get("tutar", 0) for g in g_giderler)
-
-  kc1, kc2, kc3 = st.columns(3)
-  with kc1:
-    st.metric(f"{secilen_kasa_tarih_str} Ciro", f"{g_ciro_dahil:.2f} TL")
-  with kc2:
-    st.metric(f"{secilen_kasa_tarih_str} Kâr", f"{g_kar_dahil:.2f} TL")
-  with kc3:
-    st.metric(f"{secilen_kasa_tarih_str} Gider", f"{g_toplam_gider:.2f} TL")
-
-  st.markdown("#### Bu Günde Satılan Ürünler")
-  if g_satislar:
-    st.table(pd.DataFrame(g_satislar))
-  else:
-    st.info(f"{secilen_kasa_tarih_str} tarihinde satış kaydı bulunmuyor.")
-
-  st.markdown("#### Bu Günde Yapılan Giderler")
-  if g_giderler:
-    st.table(pd.DataFrame(g_giderler))
-  else:
-    st.info(f"{secilen_kasa_tarih_str} tarihinde gider kaydı bulunmuyor.")
-
-# 5. GİDERLER
-with tab5:
-  st.header("💸 Gider Yönetimi (Maaş, Muhasebe vb.)")
-  with st.form("gider_ekle_form"):
-    g_tarih = st.text_input(
-        "Gider Tarihi",
-        value=datetime.now().strftime("%d.%m.%Y"),
-        key="gider_tarih",
-    )
-    g_aciklama = st.text_input(
-        "Gider Açıklaması / Türü",
-        placeholder="Örn: İşçi Maaşı, Muhasebe Ücreti, Elektrik Faturası",
-    )
-    g_tutar = st.number_input(
-        "Gider Tutarı (TL)", min_value=0.0, value=0.0, key="gider_tutar"
-    )
-    g_kasadan_dus = st.checkbox(
-        "Bu gider ücreti kasanın bakiyesinden düşülsün", value=True
-    )
-
-    if st.form_submit_button("Gideri Kaydet"):
-      if g_aciklama.strip() and g_tutar > 0:
-        veri["g"].append({
-            "tarih": g_tarih,
-            "aciklama": g_aciklama.strip(),
-            "tutar": g_tutar,
-            "kasadan_dus": g_kasadan_dus,
-        })
-        veri_kaydet(veri)
-        st.success(f"'{g_aciklama.strip()}' gideri başarıyla kaydedildi.")
-        st.rerun()
-      else:
-        st.error("Lütfen geçerli bir açıklama ve 0'dan büyük tutar girin.")
-
-  st.divider()
-  st.subheader("📋 Kayıtlı Giderler Listesi")
-  if veri["g"]:
-    gider_tablo = []
-    for idx, g in enumerate(reversed(veri["g"])):
-      gider_tablo.append({
-          "No": len(veri["g"]) - idx,
-          "Tarih": g.get("tarih"),
-          "Açıklama": g.get("aciklama"),
-          "Tutar": f"{g.get('tutar'):.2f} TL",
-          "Kasadan Düştü mü?": "Evet"
-          if g.get("kasadan_dus", True)
-          else "Hayır",
-      })
-    st.table(pd.DataFrame(gider_tablo))
-
-    if st.button("Seçili Son Gideri Sil"):
-      veri["g"].pop()
-      veri_kaydet(veri)
-      st.success("Son gider kaydı silindi.")
-      st.rerun()
-  else:
-    st.info("Kayıtlı gider bulunmuyor.")
-
-# 6. STOK LİSTESİ
-with tab6:
   st.header("📦 Ürün ve Stok Yönetimi (Parti Bazlı Alım)")
 
   st.subheader("➕ Yeni Alım / Stok Ekle")
@@ -779,8 +639,8 @@ with tab6:
   else:
     st.info("Kayıtlı ürün bulunmuyor.")
 
-# 7. KRİTİK STOK
-with tab7:
+# 4. KRİTİK STOK
+with tab4:
   st.header("⚠️ Kritik Stok Seviyeleri")
   kritik_liste = []
   for k, alimlar in veri["u"].items():
@@ -795,6 +655,146 @@ with tab7:
     st.table(pd.DataFrame(kritik_liste))
   else:
     st.success("Kritik seviyede ürün bulunmuyor.")
+
+# 5. CARİ
+with tab5:
+  st.header("👥 Cari Müşteri ve Firma Yönetimi")
+  yeni_m = st.text_input("Yeni Müşteri / Firma Adı", key="cari_yeni_m")
+  if st.button("Müşteri Ekle"):
+    if yeni_m.strip():
+      m_ad = yeni_m.strip().upper()
+      if m_ad not in veri["ml"]:
+        veri["ml"].append(m_ad)
+        veri_kaydet(veri)
+        st.success(f"'{m_ad}' eklendi.")
+        st.rerun()
+  st.write("Kayıtlı Müşteriler:", veri["ml"])
+
+# 6. GİDERLER
+with tab6:
+  st.header("💸 Gider Yönetimi (Maaş, Muhasebe vb.)")
+  with st.form("gider_ekle_form"):
+    g_tarih = st.text_input(
+        "Gider Tarihi",
+        value=datetime.now().strftime("%d.%m.%Y"),
+        key="gider_tarih",
+    )
+    g_aciklama = st.text_input(
+        "Gider Açıklaması / Türü",
+        placeholder="Örn: İşçi Maaşı, Muhasebe Ücreti, Elektrik Faturası",
+    )
+    g_tutar = st.number_input(
+        "Gider Tutarı (TL)", min_value=0.0, value=0.0, key="gider_tutar"
+    )
+    g_kasadan_dus = st.checkbox(
+        "Bu gider ücreti kasanın bakiyesinden düşülsün", value=True
+    )
+
+    if st.form_submit_button("Gideri Kaydet"):
+      if g_aciklama.strip() and g_tutar > 0:
+        veri["g"].append({
+            "tarih": g_tarih,
+            "aciklama": g_aciklama.strip(),
+            "tutar": g_tutar,
+            "kasadan_dus": g_kasadan_dus,
+        })
+        veri_kaydet(veri)
+        st.success(f"'{g_aciklama.strip()}' gideri başarıyla kaydedildi.")
+        st.rerun()
+      else:
+        st.error("Lütfen geçerli bir açıklama ve 0'dan büyük tutar girin.")
+
+  st.divider()
+  st.subheader("📋 Kayıtlı Giderler Listesi")
+  if veri["g"]:
+    gider_tablo = []
+    for idx, g in enumerate(reversed(veri["g"])):
+      gider_tablo.append({
+          "No": len(veri["g"]) - idx,
+          "Tarih": g.get("tarih"),
+          "Açıklama": g.get("aciklama"),
+          "Tutar": f"{g.get('tutar'):.2f} TL",
+          "Kasadan Düştü mü?": "Evet"
+          if g.get("kasadan_dus", True)
+          else "Hayır",
+      })
+    st.table(pd.DataFrame(gider_tablo))
+
+    if st.button("Seçili Son Gideri Sil"):
+      veri["g"].pop()
+      veri_kaydet(veri)
+      st.success("Son gider kaydı silindi.")
+      st.rerun()
+  else:
+    st.info("Kayıtlı gider bulunmuyor.")
+
+# 7. KASA
+with tab7:
+  st.header("💰 Kasa ve Nakit Bakiye Yönetimi")
+
+  nakit_satislar_toplami = sum(
+      s.get("tutar", 0) for s in veri["s"] if s.get("odeme") == "Nakit"
+  )
+  giderler_kasadan = sum(
+      g.get("tutar", 0) for g in veri["g"] if g.get("kasadan_dus", True)
+  )
+  stok_kasadan = sum(
+      a.get("adet", 0) * a.get("maliyet", 0)
+      for alimlar in veri["u"].values()
+      for a in alimlar
+      if a.get("kasadan_dus", True)
+  )
+
+  net_kasa_bakiye = nakit_satislar_toplami - giderler_kasadan - stok_kasadan
+
+  st.metric(
+      "Kasa Mevcut Nakit Bakiyesi",
+      f"{net_kasa_bakiye:.2f} TL",
+      help=(
+          "Nakit Satışlar - Kasadan Düşülen Giderler - Kasadan Düşülen Stok"
+          " Alımları"
+      ),
+  )
+
+  st.divider()
+  st.subheader("📅 Tarih Bazlı Kasa ve Günlük Geçmiş İnceleme")
+  kasa_tarih = st.date_input(
+      "İncelemek İstediğiniz Tarihi Seçin",
+      value=datetime.today(),
+      key="kasa_tarih_secim",
+  )
+  secilen_kasa_tarih_str = kasa_tarih.strftime("%d.%m.%Y")
+
+  g_satislar = [
+      s for s in veri["s"] if s.get("tarih") == secilen_kasa_tarih_str
+  ]
+  g_giderler = [
+      g for g in veri["g"] if g.get("tarih") == secilen_kasa_tarih_str
+  ]
+
+  g_ciro_dahil = sum(s.get("tutar", 0) for s in g_satislar)
+  g_kar_dahil = sum(s.get("kar", 0) for s in g_satislar)
+  g_toplam_gider = sum(g.get("tutar", 0) for g in g_giderler)
+
+  kc1, kc2, kc3 = st.columns(3)
+  with kc1:
+    st.metric(f"{secilen_kasa_tarih_str} Ciro", f"{g_ciro_dahil:.2f} TL")
+  with kc2:
+    st.metric(f"{secilen_kasa_tarih_str} Kâr", f"{g_kar_dahil:.2f} TL")
+  with kc3:
+    st.metric(f"{secilen_kasa_tarih_str} Gider", f"{g_toplam_gider:.2f} TL")
+
+  st.markdown("#### Bu Günde Satılan Ürünler")
+  if g_satislar:
+    st.table(pd.DataFrame(g_satislar))
+  else:
+    st.info(f"{secilen_kasa_tarih_str} tarihinde satış kaydı bulunmuyor.")
+
+  st.markdown("#### Bu Günde Yapılan Giderler")
+  if g_giderler:
+    st.table(pd.DataFrame(g_giderler))
+  else:
+    st.info(f"{secilen_kasa_tarih_str} tarihinde gider kaydı bulunmuyor.")
 
 # 8. RAPORLAR
 with tab8:
